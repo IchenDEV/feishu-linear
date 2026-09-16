@@ -1,4 +1,5 @@
-import type { Request, Response } from "express";
+import type { Context } from "koa";
+import "../types.js";
 import type { LinearClient } from "@linear/sdk";
 import type { Env } from "../config.js";
 import { parseLinearUrl } from "../utils/text.js";
@@ -12,26 +13,26 @@ import { createChildLogger } from "../logger.js";
 const log = createChildLogger("link-preview");
 
 export function createLinkPreviewHandler(config: Env, linear: LinearClient) {
-  return async (req: Request, res: Response) => {
-    const body = req.body;
+  return async (ctx: Context) => {
+    const body = ctx.request.body as Record<string, unknown>;
 
     // URL 验证
     if (body.type === "url_verification") {
-      res.json({ challenge: body.challenge });
+      ctx.body = { challenge: body.challenge };
       return;
     }
 
-    const event = body.event;
+    const event = body.event as Record<string, unknown> | undefined;
     if (!event) {
-      res.json({});
+      ctx.body = {};
       return;
     }
 
-    const url = event.context?.url as string;
-    const previewToken = event.context?.preview_token as string;
+    const context = event.context as Record<string, unknown> | undefined;
+    const url = context?.url as string;
 
     if (!url) {
-      res.json({});
+      ctx.body = {};
       return;
     }
 
@@ -39,7 +40,7 @@ export function createLinkPreviewHandler(config: Env, linear: LinearClient) {
 
     const parsed = parseLinearUrl(url);
     if (!parsed) {
-      res.json({});
+      ctx.body = {};
       return;
     }
 
@@ -56,7 +57,7 @@ export function createLinkPreviewHandler(config: Env, linear: LinearClient) {
           const state = await issue.state;
           const assignee = await issue.assignee;
 
-          const preview = buildIssueLinkPreview({
+          ctx.body = buildIssueLinkPreview({
             identifier: issue.identifier,
             title: issue.title,
             description: issue.description ?? undefined,
@@ -65,8 +66,6 @@ export function createLinkPreviewHandler(config: Env, linear: LinearClient) {
             createdAt: issue.createdAt.toISOString().split("T")[0],
             url: issue.url,
           });
-
-          res.json(preview);
           return;
         }
 
@@ -75,15 +74,13 @@ export function createLinkPreviewHandler(config: Env, linear: LinearClient) {
           const project = await linearOps.getProject(linear, parsed.id);
           if (!project) break;
 
-          const preview = buildProjectLinkPreview({
+          ctx.body = buildProjectLinkPreview({
             name: project.name,
             description: project.description ?? undefined,
             status: project.state,
             targetDate: project.targetDate ?? undefined,
             url: project.url,
           });
-
-          res.json(preview);
           return;
         }
 
@@ -94,14 +91,13 @@ export function createLinkPreviewHandler(config: Env, linear: LinearClient) {
       log.error({ err, url }, "链接预览处理失败");
     }
 
-    // 回退：至少返回 inline
-    res.json({
+    ctx.body = {
       inline: {
         i18n_title: {
           zh_cn: `Linear: ${url}`,
           en_us: `Linear: ${url}`,
         },
       },
-    });
+    };
   };
 }

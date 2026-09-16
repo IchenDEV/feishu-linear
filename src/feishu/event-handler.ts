@@ -1,8 +1,11 @@
-import type { Request, Response } from "express";
+import type { Context } from "koa";
+import "../types.js";
 import type { LinearClient } from "@linear/sdk";
 import type { Client as LarkClient } from "@larksuiteoapi/node-sdk";
 import type { Db } from "../db/index.js";
 import type { Env } from "../config.js";
+import { eq } from "drizzle-orm";
+import { schema } from "../db/index.js";
 import { isDuplicate } from "../utils/dedup.js";
 import {
   extractTextFromFeishuContent,
@@ -24,9 +27,9 @@ import { createChildLogger } from "../logger.js";
 
 const log = createChildLogger("feishu-event");
 
-// Issue ID 自动回复的冷却记录：chatId:identifier → timestamp
+// Issue ID 自动回复的冷却记录
 const issueIdCooldown = new Map<string, number>();
-const COOLDOWN_MS = 60 * 60 * 1000; // 60 分钟
+const COOLDOWN_MS = 60 * 60 * 1000;
 
 export function createFeishuEventHandler(
   config: Env,
@@ -34,57 +37,57 @@ export function createFeishuEventHandler(
   lark: LarkClient,
   linear: LinearClient,
 ) {
-  return async (req: Request, res: Response) => {
-    const body = req.body;
+  return async (ctx: Context) => {
+    const body = ctx.request.body as Record<string, unknown>;
 
     // URL 验证（飞书初始配置时的 challenge 校验）
     if (body.type === "url_verification") {
       log.info("飞书 URL 验证");
-      res.json({ challenge: body.challenge });
+      ctx.body = { challenge: body.challenge };
       return;
     }
 
     // Schema 2.0 事件
     if (body.schema === "2.0") {
-      res.json({ code: 0 }); // 先响应，异步处理
+      ctx.body = { code: 0 };
 
-      const header = body.header;
-      const event = body.event;
-
+      const header = body.header as Record<string, unknown> | undefined;
+      const event = body.event as Record<string, unknown> | undefined;
       if (!header || !event) return;
 
-      // 去重
-      if (isDuplicate(db, header.event_id, "feishu")) {
+      if (isDuplicate(db, header.event_id as string, "feishu")) {
         log.debug({ eventId: header.event_id }, "重复事件，跳过");
         return;
       }
 
-      try {
-        switch (header.event_type) {
-          case "im.message.receive_v1":
-            await handleMessageReceived(config, db, lark, linear, event);
-            break;
-
-          case "application.bot.menu_v6":
-            await handleBotMenu(config, db, lark, linear, event);
-            break;
-
-          default:
-            log.debug({ type: header.event_type }, "未处理的事件类型");
+      // 异步处理，不阻塞响应
+      setImmediate(async () => {
+        try {
+          switch (header.event_type) {
+            case "im.message.receive_v1":
+              await handleMessageReceived(config, db, lark, linear, event);
+              break;
+            case "application.bot.menu_v6":
+              await handleBotMenu(config, db, lark, linear, event);
+              break;
+            default:
+              log.debug({ type: header.event_type }, "未处理的事件类型");
+          }
+        } catch (err) {
+          log.error({ err, eventType: header.event_type }, "事件处理失败");
         }
-      } catch (err) {
-        log.error({ err, eventType: header.event_type }, "事件处理失败");
-      }
+      });
       return;
     }
 
-    // Legacy v1.0 事件
+    // Legacy v1.0
     if (body.token) {
-      res.json({ code: 0 });
+      ctx.body = { code: 0 };
       return;
     }
 
-    res.status(400).json({ error: "Unknown event format" });
+    ctx.status = 400;
+    ctx.body = { error: "Unknown event format" };
   };
 }
 
@@ -99,7 +102,6 @@ async function handleMessageReceived(
   if (!message) return;
 
   const chatId = message.chat_id as string;
-  const chatType = message.chat_type as string;
   const msgType = message.msg_type as string;
   const messageId = message.message_id as string;
   const threadId = message.thread_id as string | undefined;
@@ -109,19 +111,16 @@ async function handleMessageReceived(
   const senderId = (sender?.sender_id as Record<string, unknown>)?.open_id as string;
   const senderType = sender?.sender_type as string;
 
-  // 忽略机器人自己的消息
   if (senderType === "app") return;
 
   const textContent = extractTextFromFeishuContent(content, msgType);
 
-  // 1. 检查是否在同步线程中 → 同步到 Linear
+  // 1. 同步线程 → Linear
   if (threadId) {
-    const { eq } = await import("drizzle-orm");
-    const { syncThreads } = await import("../db/schema.js");
     const syncThread = db
       .select()
-      .from(syncThreads)
-      .where(eq(syncThreads.feishuThreadId, threadId))
+      .from(schema.syncThreads)
+      .where(eq(schema.syncThreads.feishuThreadId, threadId))
       .get();
 
     if (syncThread?.syncEnabled) {
@@ -135,7 +134,7 @@ async function handleMessageReceived(
     }
   }
 
-  // 2. 检查是否 @了机器人 → 触发 Agent
+  // 2. @机器人 → Agent
   const mentions = message.mentions as Array<Record<string, unknown>> | undefined;
   const isMentioned = mentions?.some(
     (m) => (m as Record<string, unknown>).id?.toString().startsWith("cli_"),
@@ -154,7 +153,7 @@ async function handleMessageReceived(
     return;
   }
 
-  // 3. 检查消息中是否包含 Issue ID（如 ENG-482） → 自动展开
+  // 3. Issue ID 自动展开（ENG-482）
   if (msgType === "text") {
     const identifiers = detectIssueIdentifiers(textContent);
     for (const id of identifiers) {
@@ -194,7 +193,7 @@ async function handleMessageReceived(
     }
   }
 
-  // 4. 检查消息中是否包含 Linear URL → 触发链接展开
+  // 4. Linear URL 展开
   const linearUrlRegex = /https?:\/\/linear\.app\/[^\s]+/g;
   const urls = textContent.match(linearUrlRegex);
   if (urls) {

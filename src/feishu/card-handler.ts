@@ -1,4 +1,5 @@
-import type { Request, Response } from "express";
+import type { Context } from "koa";
+import "../types.js";
 import type { LinearClient } from "@linear/sdk";
 import type { Client as LarkClient } from "@larksuiteoapi/node-sdk";
 import type { Db } from "../db/index.js";
@@ -7,7 +8,6 @@ import { eq } from "drizzle-orm";
 import * as linearOps from "../linear/client.js";
 import * as feishuOps from "../feishu/client.js";
 import { schema } from "../db/index.js";
-import { createSyncThread } from "../sync/thread-sync.js";
 import {
   buildIssueCard,
   getStatusColor,
@@ -23,24 +23,25 @@ export function createCardActionHandler(
   lark: LarkClient,
   linear: LinearClient,
 ) {
-  return async (req: Request, res: Response) => {
-    const body = req.body;
+  return async (ctx: Context) => {
+    const body = ctx.request.body as Record<string, unknown>;
 
     // URL 验证
     if (body.type === "url_verification") {
-      res.json({ challenge: body.challenge });
+      ctx.body = { challenge: body.challenge };
       return;
     }
 
-    const event = body.event;
+    const event = body.event as Record<string, unknown> | undefined;
     if (!event?.action) {
-      res.json({});
+      ctx.body = {};
       return;
     }
 
-    const actionValue = event.action?.value;
+    const actionObj = event.action as Record<string, unknown> | undefined;
+    const actionValue = actionObj?.value;
     if (!actionValue) {
-      res.json({});
+      ctx.body = {};
       return;
     }
 
@@ -48,29 +49,29 @@ export function createCardActionHandler(
     try {
       action = typeof actionValue === "string" ? JSON.parse(actionValue) : actionValue;
     } catch {
-      res.json({});
+      ctx.body = {};
       return;
     }
 
-    const operatorOpenId = event.operator?.open_id as string;
+    const operator = event.operator as Record<string, unknown> | undefined;
+    const operatorOpenId = operator?.open_id as string;
 
     try {
       switch (action.action) {
         case "assign_to_me":
         case "assign_to_me_from_preview": {
-          const issueIdentifier = action.issueId as string;
           const result = await handleAssignToMe(
             db,
             linear,
             operatorOpenId,
-            issueIdentifier,
+            action.issueId as string,
           );
-          res.json({
+          ctx.body = {
             toast: {
               type: result.success ? "success" : "error",
               content: result.message,
             },
-          });
+          };
           return;
         }
 
@@ -83,9 +84,9 @@ export function createCardActionHandler(
             action.messageId as string,
             operatorOpenId,
           );
-          res.json({
+          ctx.body = {
             toast: { type: "success", content: "Issue 创建中..." },
-          });
+          };
           return;
         }
 
@@ -98,30 +99,30 @@ export function createCardActionHandler(
             action.messageId as string,
             operatorOpenId,
           );
-          res.json({
+          ctx.body = {
             toast: { type: "success", content: "Issue 创建中，同步线程将建立..." },
-          });
+          };
           return;
         }
 
         case "add_comment": {
-          res.json({
+          ctx.body = {
             toast: {
               type: "info",
               content: "请在话题中直接回复，评论会自动同步到 Linear",
             },
-          });
+          };
           return;
         }
 
         default:
-          res.json({});
+          ctx.body = {};
       }
     } catch (err) {
       log.error({ err, action: action.action }, "卡片交互处理失败");
-      res.json({
+      ctx.body = {
         toast: { type: "error", content: "操作失败，请稍后重试" },
-      });
+      };
     }
   };
 }
@@ -132,7 +133,6 @@ async function handleAssignToMe(
   operatorOpenId: string,
   issueIdentifier: string,
 ): Promise<{ success: boolean; message: string }> {
-  // 查找用户映射
   const userMapping = db
     .select()
     .from(schema.userMappings)
@@ -146,10 +146,7 @@ async function handleAssignToMe(
     };
   }
 
-  // 搜索 Issue
-  const results = await linearOps.searchIssues(linear, issueIdentifier, {
-    first: 1,
-  });
+  const results = await linearOps.searchIssues(linear, issueIdentifier, { first: 1 });
   const issue = results.nodes[0];
   if (!issue) {
     return { success: false, message: `未找到 Issue ${issueIdentifier}` };
@@ -159,10 +156,7 @@ async function handleAssignToMe(
     assigneeId: userMapping.linearUserId,
   });
 
-  return {
-    success: true,
-    message: `已将 ${issueIdentifier} 分配给你`,
-  };
+  return { success: true, message: `已将 ${issueIdentifier} 分配给你` };
 }
 
 async function handleQuickCreateIssue(
@@ -179,7 +173,6 @@ async function handleQuickCreateIssue(
     return;
   }
 
-  // 使用第一个团队（或从 Agent Guidance 获取默认团队）
   const guidance = db
     .select()
     .from(schema.agentGuidance)
@@ -196,7 +189,6 @@ async function handleQuickCreateIssue(
     .get();
   if (userMapping) assigneeId = userMapping.linearUserId;
 
-  // 获取源消息内容作为标题
   let title = "来自飞书的 Issue";
   if (messageId) {
     try {
@@ -245,9 +237,5 @@ async function handleCreateIssueWithSync(
   messageId: string,
   operatorOpenId: string,
 ) {
-  // 先创建 Issue
   await handleQuickCreateIssue(db, lark, linear, chatId, messageId, operatorOpenId);
-
-  // TODO: 获取刚创建的 Issue ID，创建同步线程
-  // 需要配合飞书话题 API 实现
 }

@@ -1,29 +1,32 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { Request, Response, NextFunction } from "express";
+import type { Context, Next } from "koa";
+import "../types.js";
 import { createChildLogger } from "../logger.js";
 
 const log = createChildLogger("linear-webhook");
 
-// Linear Webhook 签名验证中间件
+// Linear Webhook 签名验证中间件（Koa）
 export function verifyLinearSignature(secret: string) {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (ctx: Context, next: Next) => {
     if (!secret) {
       log.warn("未配置 LINEAR_WEBHOOK_SECRET，跳过签名验证");
-      next();
+      await next();
       return;
     }
 
-    const signature = req.headers["linear-signature"] as string;
+    const signature = ctx.get("linear-signature");
     if (!signature) {
       log.warn("缺少 Linear-Signature 头");
-      res.status(401).json({ error: "Missing signature" });
+      ctx.status = 401;
+      ctx.body = { error: "Missing signature" };
       return;
     }
 
-    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+    const rawBody = ctx.request.rawBody;
     if (!rawBody) {
       log.warn("无法获取原始请求体");
-      res.status(400).json({ error: "Missing raw body" });
+      ctx.status = 400;
+      ctx.body = { error: "Missing raw body" };
       return;
     }
 
@@ -34,7 +37,8 @@ export function verifyLinearSignature(secret: string) {
 
     if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
       log.warn("签名验证失败");
-      res.status(401).json({ error: "Invalid signature" });
+      ctx.status = 401;
+      ctx.body = { error: "Invalid signature" };
       return;
     }
 
@@ -45,12 +49,13 @@ export function verifyLinearSignature(secret: string) {
       const now = Date.now();
       if (Math.abs(now - ts) > 5 * 60 * 1000) {
         log.warn({ delta: now - ts }, "Webhook 时间戳过期");
-        res.status(401).json({ error: "Stale webhook" });
+        ctx.status = 401;
+        ctx.body = { error: "Stale webhook" };
         return;
       }
     }
 
-    next();
+    await next();
   };
 }
 

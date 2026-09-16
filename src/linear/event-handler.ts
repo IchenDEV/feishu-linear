@@ -1,4 +1,5 @@
-import type { Request, Response } from "express";
+import type { Context } from "koa";
+import "../types.js";
 import type { Client as LarkClient } from "@larksuiteoapi/node-sdk";
 import type { LinearClient } from "@linear/sdk";
 import type { Db } from "../db/index.js";
@@ -27,42 +28,43 @@ export function createLinearEventHandler(
   lark: LarkClient,
   linear: LinearClient,
 ) {
-  return async (req: Request, res: Response) => {
-    // 先响应 200
-    res.status(200).json({ success: true });
+  return async (ctx: Context) => {
+    ctx.status = 200;
+    ctx.body = { success: true };
 
-    const payload = req.body as LinearWebhookPayload;
+    const payload = ctx.request.body as LinearWebhookPayload;
 
-    // 防回声：忽略本应用触发的事件
     if (isEchoEvent(payload, config.LINEAR_ORG_ID)) {
       log.debug("跳过自身触发的事件");
       return;
     }
 
-    // 去重
     const eventId = `linear:${payload.type}:${payload.action}:${payload.data?.id}:${payload.createdAt}`;
     if (isDuplicate(db, eventId, "linear")) {
       log.debug({ eventId }, "重复事件，跳过");
       return;
     }
 
-    try {
-      switch (payload.type) {
-        case "Issue":
-          await handleIssueEvent(config, db, lark, linear, payload);
-          break;
-        case "Comment":
-          await handleCommentEvent(config, db, lark, linear, payload);
-          break;
-        case "Project":
-          await handleProjectEvent(config, db, lark, linear, payload);
-          break;
-        default:
-          log.debug({ type: payload.type, action: payload.action }, "未处理的事件类型");
+    // 异步处理
+    setImmediate(async () => {
+      try {
+        switch (payload.type) {
+          case "Issue":
+            await handleIssueEvent(config, db, lark, linear, payload);
+            break;
+          case "Comment":
+            await handleCommentEvent(config, db, lark, linear, payload);
+            break;
+          case "Project":
+            await handleProjectEvent(config, db, lark, linear, payload);
+            break;
+          default:
+            log.debug({ type: payload.type, action: payload.action }, "未处理的事件类型");
+        }
+      } catch (err) {
+        log.error({ err, type: payload.type, action: payload.action }, "Linear 事件处理失败");
       }
-    } catch (err) {
-      log.error({ err, type: payload.type, action: payload.action }, "Linear 事件处理失败");
-    }
+    });
   };
 }
 
@@ -70,7 +72,7 @@ async function handleIssueEvent(
   config: Env,
   db: Db,
   lark: LarkClient,
-  linear: LinearClient,
+  _linear: LinearClient,
   payload: LinearWebhookPayload,
 ) {
   const data = payload.data;
@@ -86,7 +88,6 @@ async function handleIssueEvent(
       const state = data.state as Record<string, unknown> | undefined;
       const assignee = data.assignee as Record<string, unknown> | undefined;
 
-      // 团队通知
       await sendTeamNotification(db, lark, {
         teamId,
         action: "创建",
@@ -97,7 +98,6 @@ async function handleIssueEvent(
         actor: actorName,
       });
 
-      // 项目通知（如有 projectId）
       if (data.projectId) {
         await sendProjectNotification(db, lark, {
           projectId: data.projectId as string,
@@ -109,7 +109,6 @@ async function handleIssueEvent(
         });
       }
 
-      // 个人通知（分配给某人）
       if (assignee?.id) {
         await sendPersonalNotification(db, lark, {
           linearUserId: assignee.id as string,
@@ -128,18 +127,15 @@ async function handleIssueEvent(
       const updatedFrom = payload.updatedFrom ?? {};
       const state = data.state as Record<string, unknown> | undefined;
 
-      // 状态变更
       if (updatedFrom.stateId) {
         const statusName = (state?.name as string) ?? "Unknown";
 
-        // 通知同步线程
         await notifySyncThreadStatusChange(db, lark, {
           linearIssueId: issueId,
           status: statusName,
           actor: actorName,
         });
 
-        // 团队通知
         await sendTeamNotification(db, lark, {
           teamId,
           action: "状态变更",
@@ -152,7 +148,6 @@ async function handleIssueEvent(
         });
       }
 
-      // 负责人变更
       if (updatedFrom.assigneeId) {
         const assignee = data.assignee as Record<string, unknown> | undefined;
         if (assignee?.id) {
@@ -187,17 +182,11 @@ async function handleCommentEvent(
   if (payload.action !== "create") return;
 
   const data = payload.data;
-  const issueId = data.issueId as string;
-  const commentId = data.id as string;
-  const body = data.body as string;
-  const actorName = payload.actor?.name ?? "Unknown";
-
-  // 同步到飞书话题
   await syncLinearToFeishu(db, lark, {
-    linearIssueId: issueId,
-    linearCommentId: commentId,
-    actorName,
-    body,
+    linearIssueId: data.issueId as string,
+    linearCommentId: data.id as string,
+    actorName: payload.actor?.name ?? "Unknown",
+    body: data.body as string,
   });
 }
 
@@ -215,14 +204,12 @@ async function handleProjectEvent(
 
   switch (payload.action) {
     case "create": {
-      // 自动创建项目频道
       await autoCreateProjectChannel(db, lark, {
         linearProjectId: projectId,
         projectName,
         projectUrl: payload.url ?? "",
       });
 
-      // 项目通知
       await sendProjectNotification(db, lark, {
         projectId,
         action: "创建",
@@ -237,12 +224,10 @@ async function handleProjectEvent(
     case "update": {
       const updatedFrom = payload.updatedFrom ?? {};
 
-      // 项目改名 → 同步频道名
       if (updatedFrom.name) {
         await syncProjectChannelName(db, lark, projectId, projectName);
       }
 
-      // 项目状态更新
       await sendProjectNotification(db, lark, {
         projectId,
         action: "更新",
