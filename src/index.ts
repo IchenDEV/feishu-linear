@@ -4,10 +4,7 @@ import Koa from "koa";
 import { loadConfig } from "./config.js";
 import { getDb } from "./db/index.js";
 import { createFeishuClient } from "./adapters/feishu/client.js";
-import {
-  createFeishuEventDispatcher,
-  startFeishuWS,
-} from "./adapters/feishu/dispatcher.js";
+import { createFeishuEventDispatcher } from "./adapters/feishu/dispatcher.js";
 import { createLinearClientFactory } from "./adapters/linear/client.js";
 import { createRouter } from "./transport/http/routes.js";
 import { cleanupOldEvents } from "./utils/dedup.js";
@@ -76,30 +73,13 @@ async function main() {
   app.use(router.routes());
   app.use(router.allowedMethods());
 
-  // 飞书传输模式
-  const transport = config.FEISHU_TRANSPORT;
-  if (transport === "webhook" || transport === "both") {
-    app.listen(config.PORT, config.HOST, () => {
-      logger.info(
-        { host: config.HOST, port: config.PORT },
-        "🚀 Feishu-Linear (Koa) 已启动",
-      );
-      printEndpoints(config.PUBLIC_URL, config);
-    });
-  } else {
-    // 仅长连接时也起一个最小 HTTP（health + linear webhook + oauth）
-    app.listen(config.PORT, config.HOST, () => {
-      logger.info(
-        { host: config.HOST, port: config.PORT },
-        "🚀 HTTP 已启动（飞书事件走长连接）",
-      );
-      printEndpoints(config.PUBLIC_URL, config);
-    });
-  }
-
-  if (transport === "ws" || transport === "both") {
-    await startFeishuWS(ctx, feishuDispatcher);
-  }
+  app.listen(config.PORT, config.HOST, () => {
+    logger.info(
+      { host: config.HOST, port: config.PORT },
+      "🚀 Feishu-Linear (Koa, webhook-only) 已启动",
+    );
+    printEndpoints(config.PUBLIC_URL, config);
+  });
 
   setInterval(() => {
     try {
@@ -120,7 +100,6 @@ function printEndpoints(
   if (config.LINEAR_AUTH_MODE === "oauth") {
     logger.info(`  GET  ${publicUrl}/oauth/linear/install    ← Linear OAuth 安装`);
   }
-  logger.info(`  飞书传输: ${config.FEISHU_TRANSPORT}`);
   logger.info(`  Linear 鉴权: ${config.LINEAR_AUTH_MODE}`);
 }
 

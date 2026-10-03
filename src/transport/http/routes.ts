@@ -30,28 +30,13 @@ export function createRouter(
       status: "ok",
       version: "0.2.0",
       uptime: process.uptime(),
-      feishuTransport: ctx.config.FEISHU_TRANSPORT,
       linearAuth: ctx.config.LINEAR_AUTH_MODE,
     };
   });
 
-  // ── 飞书：官方 EventDispatcher（事件 + 卡片回调 + 链接预览 同一入口）──
-  // 开发者后台可将事件/回调 URL 都指到此路径
+  // ── 飞书：事件 / 卡片回调 / 链接预览 共用同一个请求地址 ──
   router.post(
     "/webhook/feishu",
-    createFeishuWebhookMiddleware(feishuDispatcher),
-  );
-  // 兼容旧路径
-  router.post(
-    "/webhook/feishu/event",
-    createFeishuWebhookMiddleware(feishuDispatcher),
-  );
-  router.post(
-    "/webhook/feishu/card",
-    createFeishuWebhookMiddleware(feishuDispatcher),
-  );
-  router.post(
-    "/webhook/feishu/link-preview",
     createFeishuWebhookMiddleware(feishuDispatcher),
   );
 

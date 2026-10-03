@@ -7,7 +7,7 @@
 ```
 src/
 ├── adapters/          # 平台接入层（只懂飞书/Linear SDK）
-│   ├── feishu/        # EventDispatcher + WSClient + 消息/卡片 API
+│   ├── feishu/        # EventDispatcher（webhook-only）+ 消息/卡片 API
 │   └── linear/        # OAuth(actor=app) / API Key + Webhook 验签 + GraphQL
 ├── domain/            # 业务领域（不依赖 HTTP）
 │   ├── issues/        # 创建 / 分配 / 卡片数据
@@ -26,7 +26,7 @@ src/
 | 侧 | 方式 | 说明 |
 |---|---|---|
 | 飞书事件/回调 | 官方 `EventDispatcher` + `adaptKoaRouter` | 自动 challenge / 验签 / 解密 |
-| 飞书本地开发 | `WSClient` 长连接 | `FEISHU_TRANSPORT=ws` 或 `both` |
+| 飞书本地开发 | 内网穿透（ngrok / cloudflared）暴露 `/webhook/feishu` | 仅 webhook，无长连接模式 |
 | Linear Webhook | `@linear/sdk/webhooks` `LinearWebhookClient` | HMAC + `webhookTimestamp`（毫秒） |
 | Linear 鉴权 | `api_key` 或 OAuth `actor=app` | OAuth 才支持 `createAsUser` |
 
@@ -44,21 +44,22 @@ npm run dev
 ## 飞书开发者后台配置
 
 1. **机器人能力**：开启
-2. **事件订阅**（Webhook 或 长连接二选一/并存）
-   - `im.message.receive_v1`
-   - `application.bot.menu_v6`
-3. **回调订阅**
+2. **事件订阅**：订阅方式选「将事件发送至开发者服务器」
+   - 请求地址：`https://your-domain/webhook/feishu`
+   - 记下 Verification Token → `FEISHU_VERIFICATION_TOKEN`（必填）
+   - 如开启加密，Encrypt Key → `FEISHU_ENCRYPT_KEY`
+   - 添加事件：`im.message.receive_v1`、`application.bot.menu_v6`
+3. **回调订阅**：同样选「将回调发送至开发者服务器」，请求地址同上
    - `card.action.trigger`
    - `url.preview.get`（链接预览，URL 规则：`linear.app/*`）
-4. **请求地址**（Webhook 模式）
-   - 事件 / 回调均可指向：`https://your-domain/webhook/feishu`
+4. 卡片交互与链接预览回调须在 **3 秒内** 返回；事件类请求会先 ACK 再后台处理。
 5. **权限**（最小集）
    - `im:message` / `im:message:send_as_bot`
    - `im:message.group_at_msg:readonly` + `im:message.p2p_msg:readonly`
    - `im:chat` / `im:chat:create`（项目频道自动创建）
    - `contact:user.base:readonly` / `contact:user.id:readonly`（用户绑定）
 
-> 长连接模式：先本地 `npm run dev`，再在后台保存「使用长连接接收」。
+> 本地开发：先 `npm run dev`，再用 `cloudflared tunnel --url http://localhost:3000`（或 ngrok）拿到公网地址，填入后台保存即可通过 challenge 校验。
 
 ## Linear 配置
 

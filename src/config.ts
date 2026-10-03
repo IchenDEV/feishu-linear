@@ -4,10 +4,10 @@ const envSchema = z.object({
   // ── 飞书 ──
   FEISHU_APP_ID: z.string().min(1),
   FEISHU_APP_SECRET: z.string().min(1),
-  FEISHU_VERIFICATION_TOKEN: z.string().default(""),
+  /** webhook-only：必须配置，用于校验飞书推送来源 */
+  FEISHU_VERIFICATION_TOKEN: z.string().min(1),
+  /** 开发者后台开启「加密」时填写，否则留空 */
   FEISHU_ENCRYPT_KEY: z.string().default(""),
-  /** webhook | ws | both —— 本地开发推荐 ws，生产可 both */
-  FEISHU_TRANSPORT: z.enum(["webhook", "ws", "both"]).default("both"),
 
   // ── Linear ──
   /** api_key 适合自用；oauth(actor=app) 才支持 createAsUser / Agent 身份 */
