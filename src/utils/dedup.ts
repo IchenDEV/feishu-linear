@@ -2,7 +2,6 @@ import { eq, lt } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
 
-// 事件去重（飞书和 Linear 都可能重复推送）
 export function isDuplicate(
   db: Db,
   eventId: string,
@@ -16,14 +15,10 @@ export function isDuplicate(
 
   if (existing) return true;
 
-  db.insert(schema.processedEvents)
-    .values({ eventId, source })
-    .run();
-
+  db.insert(schema.processedEvents).values({ eventId, source }).run();
   return false;
 }
 
-// 定期清理旧事件（保留 7 天）
 export function cleanupOldEvents(db: Db) {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   db.delete(schema.processedEvents)

@@ -1,6 +1,6 @@
 {
   "name": "feishu-linear",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "飞书 × Linear 双向连接器 — 对标 Slack-Linear 集成的飞书版",
   "type": "module",
   "engines": {
@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.73.0",

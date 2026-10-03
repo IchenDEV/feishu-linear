@@ -1,5 +1,3 @@
-// 飞书链接预览卡片 —— Linear URL 展开
-
 export function buildIssueLinkPreview(data: {
   identifier: string;
   title: string;
@@ -19,6 +17,7 @@ export function buildIssueLinkPreview(data: {
     card: {
       type: "raw",
       data: {
+        schema: "2.0",
         config: { wide_screen_mode: true },
         header: {
           title: {
@@ -27,71 +26,71 @@ export function buildIssueLinkPreview(data: {
           },
           template: "indigo",
         },
-        elements: [
-          {
-            tag: "div",
-            fields: [
-              {
-                is_short: true,
-                text: {
-                  tag: "lark_md",
-                  content: `**状态**\n${data.status}`,
-                },
-              },
-              {
-                is_short: true,
-                text: {
-                  tag: "lark_md",
-                  content: `**负责人**\n${data.assignee ?? "未分配"}`,
-                },
-              },
-            ],
-          },
-          ...(data.description
-            ? [
-                { tag: "hr" },
+        body: {
+          elements: [
+            {
+              tag: "div",
+              fields: [
                 {
-                  tag: "div",
+                  is_short: true,
                   text: {
                     tag: "lark_md",
+                    content: `**状态**\n${data.status}`,
+                  },
+                },
+                {
+                  is_short: true,
+                  text: {
+                    tag: "lark_md",
+                    content: `**负责人**\n${data.assignee ?? "未分配"}`,
+                  },
+                },
+              ],
+            },
+            ...(data.description
+              ? [
+                  { tag: "hr" },
+                  {
+                    tag: "markdown",
                     content:
                       data.description.length > 200
                         ? data.description.slice(0, 200) + "..."
                         : data.description,
                   },
+                ]
+              : []),
+            {
+              tag: "action",
+              actions: [
+                {
+                  tag: "button",
+                  text: { tag: "plain_text", content: "打开" },
+                  type: "primary",
+                  multi_url: {
+                    url: data.url,
+                    pc_url: data.url,
+                    android_url: data.url,
+                    ios_url: data.url,
+                  },
                 },
-              ]
-            : []),
-          {
-            tag: "action",
-            actions: [
-              {
-                tag: "button",
-                text: { tag: "plain_text", content: "在 Linear 中打开" },
-                url: data.url,
-                type: "primary",
-              },
-              {
-                tag: "button",
-                text: { tag: "plain_text", content: "分配给我" },
-                type: "default",
-                value: JSON.stringify({
-                  action: "assign_to_me_from_preview",
-                  issueId: data.identifier,
-                }),
-              },
-            ],
-          },
-          {
-            tag: "note",
-            elements: [
-              {
-                tag: "plain_text",
-                content: `创建于 ${data.createdAt}`,
-              },
-            ],
-          },
-        ],
+                {
+                  tag: "button",
+                  text: { tag: "plain_text", content: "分配给我" },
+                  type: "default",
+                  behaviors: [
+                    {
+                      type: "callback",
+                      value: {
+                        action: "assign_to_me",
+                        issueId: data.identifier,
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
       },
     },
   };
@@ -114,62 +113,55 @@ export function buildProjectLinkPreview(data: {
     card: {
       type: "raw",
       data: {
+        schema: "2.0",
         config: { wide_screen_mode: true },
         header: {
           title: { tag: "plain_text", content: `📁 ${data.name}` },
           template: "turquoise",
         },
-        elements: [
-          {
-            tag: "div",
-            fields: [
-              {
-                is_short: true,
-                text: {
-                  tag: "lark_md",
-                  content: `**状态**\n${data.status}`,
-                },
-              },
-              ...(data.targetDate
-                ? [
-                    {
-                      is_short: true,
-                      text: {
-                        tag: "lark_md",
-                        content: `**目标日期**\n${data.targetDate}`,
-                      },
-                    },
-                  ]
-                : []),
-            ],
-          },
-          ...(data.description
-            ? [
-                { tag: "hr" },
+        body: {
+          elements: [
+            {
+              tag: "div",
+              fields: [
                 {
-                  tag: "div",
+                  is_short: true,
                   text: {
                     tag: "lark_md",
-                    content:
-                      data.description.length > 200
-                        ? data.description.slice(0, 200) + "..."
-                        : data.description,
+                    content: `**状态**\n${data.status}`,
                   },
                 },
-              ]
-            : []),
-          {
-            tag: "action",
-            actions: [
-              {
-                tag: "button",
-                text: { tag: "plain_text", content: "查看项目" },
-                url: data.url,
-                type: "primary",
-              },
-            ],
-          },
-        ],
+                ...(data.targetDate
+                  ? [
+                      {
+                        is_short: true,
+                        text: {
+                          tag: "lark_md",
+                          content: `**目标日期**\n${data.targetDate}`,
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+            {
+              tag: "action",
+              actions: [
+                {
+                  tag: "button",
+                  text: { tag: "plain_text", content: "查看项目" },
+                  type: "primary",
+                  multi_url: {
+                    url: data.url,
+                    pc_url: data.url,
+                    android_url: data.url,
+                    ios_url: data.url,
+                  },
+                },
+              ],
+            },
+          ],
+        },
       },
     },
   };

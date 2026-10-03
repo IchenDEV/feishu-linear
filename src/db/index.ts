@@ -14,11 +14,8 @@ export function getDb(dbPath: string) {
 
   mkdirSync(dirname(dbPath), { recursive: true });
   const sqlite = new Database(dbPath);
-
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
-
-  // 自动建表（开发阶段用 push 模式）
   createTables(sqlite);
 
   _db = drizzle(sqlite, { schema });
@@ -33,9 +30,22 @@ function createTables(sqlite: Database.Database) {
       feishu_open_id TEXT NOT NULL UNIQUE,
       feishu_union_id TEXT,
       feishu_name TEXT,
+      feishu_email TEXT,
       linear_user_id TEXT NOT NULL,
       linear_email TEXT,
       linear_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS linear_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      organization_id TEXT NOT NULL UNIQUE,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      expires_at TEXT,
+      scope TEXT,
+      app_user_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -48,6 +58,7 @@ function createTables(sqlite: Database.Database) {
       linear_issue_id TEXT NOT NULL,
       linear_issue_identifier TEXT,
       linear_issue_url TEXT,
+      linear_attachment_id TEXT,
       sync_enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -56,8 +67,8 @@ function createTables(sqlite: Database.Database) {
     CREATE TABLE IF NOT EXISTS sync_comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sync_thread_id INTEGER NOT NULL,
-      feishu_msg_id TEXT NOT NULL,
-      linear_comment_id TEXT NOT NULL,
+      feishu_msg_id TEXT NOT NULL UNIQUE,
+      linear_comment_id TEXT NOT NULL UNIQUE,
       direction TEXT NOT NULL CHECK(direction IN ('feishu_to_linear', 'linear_to_feishu')),
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -103,6 +114,12 @@ function createTables(sqlite: Database.Database) {
       event_id TEXT NOT NULL UNIQUE,
       source TEXT NOT NULL CHECK(source IN ('feishu', 'linear')),
       processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      state TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_sync_threads_linear ON sync_threads(linear_issue_id);
