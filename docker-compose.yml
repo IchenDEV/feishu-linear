@@ -1,0 +1,34 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # 容器内固定路径，覆盖 .env 里的本地值
+      DATABASE_URL: /data/feishu-linear.db
+      HOST: 0.0.0.0
+      PORT: "3000"
+    volumes:
+      - app-data:/data
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      DOMAIN: ${DOMAIN:?请在 shell 或 .env 里设置 DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

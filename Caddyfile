@@ -1,0 +1,13 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# 只放行飞书 / Linear 需要的路径；/api/* 不对公网开放
+	@public path /health /webhook/feishu /webhook/linear /oauth/linear/*
+	handle @public {
+		reverse_proxy app:3000
+	}
+
+	handle {
+		respond "Not Found" 404
+	}
+}
