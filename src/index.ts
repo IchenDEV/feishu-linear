@@ -7,103 +7,58 @@ import { createFeishuClient } from "./adapters/feishu/client.js";
 import { createFeishuEventDispatcher } from "./adapters/feishu/dispatcher.js";
 import { createLinearClientFactory } from "./adapters/linear/client.js";
 import { createRouter } from "./transport/http/routes.js";
+import {
+  bodyMiddleware,
+  errorMiddleware,
+} from "./transport/http/middleware.js";
 import { cleanupOldEvents } from "./utils/dedup.js";
 import type { AppContext } from "./app/context.js";
 import { logger } from "./logger.js";
 
-async function main() {
-  const config = loadConfig();
-  const db = getDb(config.DATABASE_URL);
-  const lark = createFeishuClient(config);
-  const linearFactory = createLinearClientFactory(config, db);
+// 组装根：同一份代码既可在 VPS/Docker 长驻运行，也可作为 Vercel Function 部署
+const config = loadConfig();
+const db = getDb(config.DATABASE_URL);
+const linearFactory = createLinearClientFactory(config, db);
 
-  const ctx: AppContext = {
-    config,
-    db,
-    lark,
-    getLinear: () => linearFactory.getClient(),
-    getLinearAppUserId: () => linearFactory.getAppUserId(),
-  };
+const ctx: AppContext = {
+  config,
+  db,
+  lark: createFeishuClient(config),
+  getLinear: () => linearFactory.getClient(),
+  getLinearAppUserId: () => linearFactory.getAppUserId(),
+};
 
-  const feishuDispatcher = createFeishuEventDispatcher(ctx);
+const app = new Koa();
+app.use(errorMiddleware);
+app.use(bodyMiddleware);
 
-  const app = new Koa();
+const router = createRouter(ctx, createFeishuEventDispatcher(ctx));
+app.use(router.routes());
+app.use(router.allowedMethods());
 
-  // 统一解析 rawBody + JSON body（Linear 验签依赖 rawBody）
-  app.use(async (koaCtx, next) => {
-    if (koaCtx.method === "POST" || koaCtx.method === "PUT" || koaCtx.method === "PATCH") {
-      const chunks: Buffer[] = [];
-      await new Promise<void>((resolve, reject) => {
-        koaCtx.req.on("data", (c: Buffer) => chunks.push(c));
-        koaCtx.req.on("end", () => resolve());
-        koaCtx.req.on("error", reject);
-      });
-      const raw = Buffer.concat(chunks);
-      koaCtx.request.rawBody = raw;
-      if (raw.length) {
-        const ctype = koaCtx.get("content-type") || "";
-        if (ctype.includes("application/json") || ctype.includes("text/json") || !ctype) {
-          try {
-            koaCtx.request.body = JSON.parse(raw.toString("utf8") || "{}");
-          } catch {
-            koaCtx.throw(422, "Invalid JSON");
-          }
-        }
-      } else {
-        koaCtx.request.body = {};
-      }
-    }
-    await next();
-  });
-
-  // 错误兜底
-  app.use(async (koaCtx, next) => {
-    try {
-      await next();
-    } catch (err) {
-      logger.error({ err, path: koaCtx.path }, "请求处理异常");
-      koaCtx.status = (err as { status?: number }).status ?? 500;
-      koaCtx.body = {
-        error: err instanceof Error ? err.message : "Internal Error",
-      };
-    }
-  });
-
-  const router = createRouter(ctx, feishuDispatcher);
-  app.use(router.routes());
-  app.use(router.allowedMethods());
-
-  app.listen(config.PORT, config.HOST, () => {
-    logger.info(
-      { host: config.HOST, port: config.PORT },
-      "🚀 Feishu-Linear (Koa, webhook-only) 已启动",
-    );
-    printEndpoints(config.PUBLIC_URL, config);
-  });
-
-  setInterval(() => {
-    try {
-      cleanupOldEvents(db);
-    } catch (err) {
-      logger.error({ err }, "清理过期事件失败");
-    }
-  }, 6 * 60 * 60 * 1000);
-}
-
-function printEndpoints(
-  publicUrl: string,
-  config: ReturnType<typeof loadConfig>,
-) {
-  logger.info(`  GET  ${publicUrl}/health`);
-  logger.info(`  POST ${publicUrl}/webhook/feishu          ← 飞书事件/回调统一入口`);
-  logger.info(`  POST ${publicUrl}/webhook/linear          ← Linear Webhook`);
+app.listen(config.PORT, config.HOST, () => {
+  logger.info(
+    { host: config.HOST, port: config.PORT, vercel: Boolean(process.env.VERCEL) },
+    "🚀 Feishu-Linear (Koa, webhook-only) 已启动",
+  );
+  logger.info(`  GET  ${config.PUBLIC_URL}/health`);
+  logger.info(`  POST ${config.PUBLIC_URL}/webhook/feishu   ← 飞书事件/回调统一入口`);
+  logger.info(`  POST ${config.PUBLIC_URL}/webhook/linear   ← Linear Webhook`);
   if (config.LINEAR_AUTH_MODE === "oauth") {
-    logger.info(`  GET  ${publicUrl}/oauth/linear/install    ← Linear OAuth 安装`);
+    logger.info(`  GET  ${config.PUBLIC_URL}/oauth/linear/install`);
   }
-  logger.info(`  Linear 鉴权: ${config.LINEAR_AUTH_MODE}`);
+  logger.info(`  Linear 鉴权: ${config.LINEAR_AUTH_MODE}；管理 API: ${config.ADMIN_TOKEN ? "已启用" : "未启用"}`);
+});
+
+// 长驻进程用内置定时器清理；Vercel 上由 vercel.json 的 Cron 调用 /cron/cleanup
+if (!process.env.VERCEL) {
+  setInterval(
+    () =>
+      cleanupOldEvents(db).catch((err) =>
+        logger.error({ err }, "清理过期事件失败"),
+      ),
+    6 * 60 * 60 * 1000,
+  ).unref();
 }
 
-main().catch((err) => {
-  logger.fatal({ err }, "启动失败");
-  process.exit(1);
-});
+export default app;

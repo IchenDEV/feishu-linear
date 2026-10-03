@@ -6,6 +6,7 @@ import {
 } from "@linear/sdk/webhooks";
 import type { AppContext } from "../../app/context.js";
 import { isDuplicate } from "../../utils/dedup.js";
+import { runInBackground } from "../../utils/background.js";
 import {
   notifyStatusChange,
   syncLinearCommentToFeishu,
@@ -66,11 +67,7 @@ export function createLinearWebhookMiddleware(ctx: AppContext) {
     koaCtx.status = 200;
     koaCtx.body = { ok: true };
 
-    setImmediate(() => {
-      handlePayload(ctx, payload).catch((err) =>
-        log.error({ err }, "Linear webhook 处理失败"),
-      );
-    });
+    runInBackground("linear-webhook", () => handlePayload(ctx, payload));
 
     await next();
   };
@@ -105,7 +102,7 @@ async function handlePayload(ctx: AppContext, payload: LinearWebhookPayload) {
   }
 
   const eventId = `linear:${type}:${action}:${data.id}:${createdAt}`;
-  if (isDuplicate(ctx.db, eventId, "linear")) return;
+  if (await isDuplicate(ctx.db, eventId, "linear")) return;
 
   switch (type) {
     case "Issue":

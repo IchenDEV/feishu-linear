@@ -1,8 +1,8 @@
 {$DOMAIN} {
 	encode zstd gzip
 
-	# 只放行飞书 / Linear 需要的路径；/api/* 不对公网开放
-	@public path /health /webhook/feishu /webhook/linear /oauth/linear/*
+	# 只放行飞书 / Linear / 管理 API 需要的路径；/api/* 由应用内 ADMIN_TOKEN 鉴权
+	@public path /health /webhook/feishu /webhook/linear /oauth/linear/* /api/*
 	handle @public {
 		reverse_proxy app:3000
 	}

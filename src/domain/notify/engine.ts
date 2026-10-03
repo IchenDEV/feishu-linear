@@ -34,7 +34,7 @@ export async function sendTeamNotification(
     detail?: string;
   },
 ) {
-  const configs = ctx.db
+  const configs = await ctx.db
     .select()
     .from(schema.notificationConfigs)
     .where(
@@ -42,8 +42,7 @@ export async function sendTeamNotification(
         eq(schema.notificationConfigs.type, "team"),
         eq(schema.notificationConfigs.linearEntityId, opts.teamId),
       ),
-    )
-    .all();
+    );
 
   const card = buildIssueNotifyCard({
     identifier: opts.issueIdentifier,
@@ -77,7 +76,7 @@ export async function sendProjectNotification(
     detail?: string;
   },
 ) {
-  const configs = ctx.db
+  const configs = await ctx.db
     .select()
     .from(schema.notificationConfigs)
     .where(
@@ -85,8 +84,7 @@ export async function sendProjectNotification(
         eq(schema.notificationConfigs.type, "project"),
         eq(schema.notificationConfigs.linearEntityId, opts.projectId),
       ),
-    )
-    .all();
+    );
 
   const card = buildIssueNotifyCard({
     identifier: "",
@@ -107,11 +105,11 @@ export async function sendProjectNotification(
     }
   }
 
-  const channel = ctx.db
+  const [channel] = await ctx.db
     .select()
     .from(schema.projectChannels)
     .where(eq(schema.projectChannels.linearProjectId, opts.projectId))
-    .get();
+    .limit(1);
 
   if (channel) {
     try {
@@ -135,7 +133,7 @@ export async function sendPersonalNotification(
     detail?: string;
   },
 ) {
-  const mapping = getMappingByLinearUserId(ctx, opts.linearUserId);
+  const mapping = await getMappingByLinearUserId(ctx, opts.linearUserId);
   if (!mapping) return;
 
   const card = buildIssueNotifyCard({
@@ -164,11 +162,11 @@ export async function autoCreateProjectChannel(
     memberOpenIds?: string[];
   },
 ) {
-  const existing = ctx.db
+  const [existing] = await ctx.db
     .select()
     .from(schema.projectChannels)
     .where(eq(schema.projectChannels.linearProjectId, opts.linearProjectId))
-    .get();
+    .limit(1);
   if (existing) return existing;
 
   try {
@@ -181,7 +179,7 @@ export async function autoCreateProjectChannel(
     const chatId = (res.data as Record<string, unknown>)?.chat_id as string;
     if (!chatId) throw new Error("无 chat_id");
 
-    const [row] = ctx.db
+    const [row] = await ctx.db
       .insert(schema.projectChannels)
       .values({
         linearProjectId: opts.linearProjectId,
@@ -189,8 +187,7 @@ export async function autoCreateProjectChannel(
         feishuChatId: chatId,
         autoCreated: true,
       })
-      .returning()
-      .all();
+      .returning();
 
     log.info({ project: opts.linearProjectId, chat: chatId }, "项目频道已创建");
     return row;
@@ -205,20 +202,18 @@ export async function syncProjectChannelName(
   linearProjectId: string,
   newName: string,
 ) {
-  const channel = ctx.db
+  const [channel] = await ctx.db
     .select()
     .from(schema.projectChannels)
     .where(eq(schema.projectChannels.linearProjectId, linearProjectId))
-    .get();
+    .limit(1);
   if (!channel) return;
 
   await feishu.updateGroupName(ctx.lark, channel.feishuChatId, `📋 ${newName}`);
-  ctx.db
+  await ctx.db
     .update(schema.projectChannels)
     .set({
       linearProjectName: newName,
-      updatedAt: new Date().toISOString(),
     })
-    .where(eq(schema.projectChannels.linearProjectId, linearProjectId))
-    .run();
+    .where(eq(schema.projectChannels.linearProjectId, linearProjectId));
 }

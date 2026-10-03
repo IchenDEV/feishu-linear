@@ -27,11 +27,11 @@ export async function createIssueFromFeishu(
   const linear = await ctx.getLinear();
   const teams = await linearApi.getTeams(linear);
 
-  const guidance = ctx.db
+  const [guidance] = await ctx.db
     .select()
     .from(schema.agentGuidance)
     .where(eq(schema.agentGuidance.feishuChatId, opts.chatId))
-    .get();
+    .limit(1);
 
   const teamId =
     opts.teamId ||

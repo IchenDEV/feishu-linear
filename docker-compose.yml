@@ -4,14 +4,30 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      # 容器内固定路径，覆盖 .env 里的本地值
-      DATABASE_URL: /data/feishu-linear.db
+      # 容器内固定值，覆盖 .env 里的本地配置
+      DATABASE_URL: postgres://feishu_linear:${POSTGRES_PASSWORD:?请在 .env 里设置 POSTGRES_PASSWORD}@postgres:5432/feishu_linear
       HOST: 0.0.0.0
       PORT: "3000"
-    volumes:
-      - app-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     expose:
       - "3000"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: feishu_linear
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 里设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: feishu_linear
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feishu_linear -d feishu_linear"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   caddy:
     image: caddy:2
@@ -29,6 +45,6 @@ services:
       - caddy-config:/config
 
 volumes:
-  app-data:
+  pg-data:
   caddy-data:
   caddy-config:

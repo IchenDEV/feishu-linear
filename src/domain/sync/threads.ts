@@ -7,20 +7,22 @@ import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("sync-threads");
 
-export function findByFeishuThread(ctx: AppContext, threadId: string) {
-  return ctx.db
+export async function findByFeishuThread(ctx: AppContext, threadId: string) {
+  const [row] = await ctx.db
     .select()
     .from(schema.syncThreads)
     .where(eq(schema.syncThreads.feishuThreadId, threadId))
-    .get();
+    .limit(1);
+  return row;
 }
 
-export function findByLinearIssue(ctx: AppContext, issueId: string) {
-  return ctx.db
+export async function findByLinearIssue(ctx: AppContext, issueId: string) {
+  const [row] = await ctx.db
     .select()
     .from(schema.syncThreads)
     .where(eq(schema.syncThreads.linearIssueId, issueId))
-    .get();
+    .limit(1);
+  return row;
 }
 
 export async function createSyncThread(
@@ -34,7 +36,7 @@ export async function createSyncThread(
     linearIssueUrl: string;
   },
 ) {
-  const existing = findByFeishuThread(ctx, opts.feishuThreadId);
+  const existing = await findByFeishuThread(ctx, opts.feishuThreadId);
   if (existing) return existing;
 
   // 在 Linear Issue 上挂飞书会话回链
@@ -53,15 +55,14 @@ export async function createSyncThread(
     log.warn({ err }, "创建 Linear attachment 失败（非致命）");
   }
 
-  const [row] = ctx.db
+  const [row] = await ctx.db
     .insert(schema.syncThreads)
     .values({
       ...opts,
       linearAttachmentId: attachmentId,
       syncEnabled: true,
     })
-    .returning()
-    .all();
+    .returning();
 
   log.info(
     {
@@ -82,14 +83,14 @@ export async function syncFeishuMessageToLinear(
     content: string;
   },
 ) {
-  const thread = findByFeishuThread(ctx, opts.feishuThreadId);
+  const thread = await findByFeishuThread(ctx, opts.feishuThreadId);
   if (!thread?.syncEnabled) return null;
 
-  const existing = ctx.db
+  const [existing] = await ctx.db
     .select()
     .from(schema.syncComments)
     .where(eq(schema.syncComments.feishuMsgId, opts.feishuMsgId))
-    .get();
+    .limit(1);
   if (existing) return existing;
 
   const linear = await ctx.getLinear();
@@ -101,7 +102,7 @@ export async function syncFeishuMessageToLinear(
     createAsUser: opts.senderName,
   });
 
-  const [row] = ctx.db
+  const [row] = await ctx.db
     .insert(schema.syncComments)
     .values({
       syncThreadId: thread.id,
@@ -109,8 +110,7 @@ export async function syncFeishuMessageToLinear(
       linearCommentId: comment.id,
       direction: "feishu_to_linear",
     })
-    .returning()
-    .all();
+    .returning();
 
   return row;
 }
@@ -124,14 +124,14 @@ export async function syncLinearCommentToFeishu(
     body: string;
   },
 ) {
-  const thread = findByLinearIssue(ctx, opts.linearIssueId);
+  const thread = await findByLinearIssue(ctx, opts.linearIssueId);
   if (!thread?.syncEnabled) return null;
 
-  const existing = ctx.db
+  const [existing] = await ctx.db
     .select()
     .from(schema.syncComments)
     .where(eq(schema.syncComments.linearCommentId, opts.linearCommentId))
-    .get();
+    .limit(1);
   if (existing) return existing;
 
   const text = `💬 **${opts.actorName}** (via Linear):\n\n${opts.body}`;
@@ -148,7 +148,7 @@ export async function syncLinearCommentToFeishu(
 
   if (!feishuMsgId) return null;
 
-  const [row] = ctx.db
+  const [row] = await ctx.db
     .insert(schema.syncComments)
     .values({
       syncThreadId: thread.id,
@@ -156,8 +156,7 @@ export async function syncLinearCommentToFeishu(
       linearCommentId: opts.linearCommentId,
       direction: "linear_to_feishu",
     })
-    .returning()
-    .all();
+    .returning();
 
   return row;
 }
@@ -166,7 +165,7 @@ export async function notifyStatusChange(
   ctx: AppContext,
   opts: { linearIssueId: string; status: string; actor: string },
 ) {
-  const thread = findByLinearIssue(ctx, opts.linearIssueId);
+  const thread = await findByLinearIssue(ctx, opts.linearIssueId);
   if (!thread) return;
 
   const emoji =

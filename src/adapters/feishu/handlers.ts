@@ -7,7 +7,7 @@ import {
   isBotMentioned,
   type FeishuMention,
 } from "../../utils/text.js";
-import { isDuplicate } from "../../utils/dedup.js";
+import { acquireIssueExpansion, isDuplicate } from "../../utils/dedup.js";
 import { findByFeishuThread, syncFeishuMessageToLinear } from "../../domain/sync/threads.js";
 import { handleAgentMessage } from "../../domain/agent/agent.js";
 import {
@@ -27,7 +27,6 @@ import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("feishu-handlers");
 
-const issueIdCooldown = new Map<string, number>();
 const COOLDOWN_MS = 60 * 60 * 1000;
 
 async function resolveFeishuUserName(
@@ -90,11 +89,11 @@ export function createFeishuHandlers(ctx: AppContext) {
       );
 
       // 去重用 message_id（官方建议）
-      if (isDuplicate(ctx.db, `feishu:msg:${messageId}`, "feishu")) return;
+      if (await isDuplicate(ctx.db, `feishu:msg:${messageId}`, "feishu")) return;
 
       // 1. 同步线程
       if (threadId) {
-        const sync = findByFeishuThread(ctx, threadId);
+        const sync = await findByFeishuThread(ctx, threadId);
         if (sync?.syncEnabled) {
           const senderName = await resolveFeishuUserName(ctx, senderId);
 
@@ -439,15 +438,14 @@ async function expandIssueIds(
 ) {
   const ids = detectIssueIdentifiers(text);
   for (const id of ids.slice(0, 3)) {
-    const key = `${chatId}:${id}`;
-    const last = issueIdCooldown.get(key);
-    if (last && Date.now() - last < COOLDOWN_MS) continue;
-
     try {
       const linear = await ctx.getLinear();
       const issue = await linearApi.getIssueByIdentifier(linear, id);
       if (!issue) continue;
-      issueIdCooldown.set(key, Date.now());
+      // 冷却窗口内展开过则跳过（DB 原子占位，跨实例共享）
+      if (!(await acquireIssueExpansion(ctx.db, chatId, id, COOLDOWN_MS))) {
+        continue;
+      }
       const cardData = await toIssueCardData(issue);
       await feishu.replyCard(
         ctx.lark,

@@ -33,12 +33,26 @@ const envSchema = z.object({
   // ── 服务 ──
   PORT: z.coerce.number().default(3000),
   HOST: z.string().default("0.0.0.0"),
-  DATABASE_URL: z.string().default("./data/feishu-linear.db"),
+  /** Postgres 连接串（Vercel 上请用 Neon 的 pooled 连接串） */
+  DATABASE_URL: z
+    .string()
+    .regex(/^postgres(ql)?:\/\//, "DATABASE_URL 必须是 postgres:// 或 postgresql:// 连接串"),
+  /** 管理 API（/api/*）的 Bearer Token；留空则管理 API 整体禁用 */
+  ADMIN_TOKEN: z.string().default(""),
+  /** Vercel Cron 调用 /cron/* 时携带的 Bearer Token（Vercel 自动注入 CRON_SECRET） */
+  CRON_SECRET: z.string().default(""),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),
   PUBLIC_URL: z.string().default("http://localhost:3000"),
 }).superRefine((val, ctx) => {
+  if (process.env.NODE_ENV === "production" && !val.LINEAR_WEBHOOK_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["LINEAR_WEBHOOK_SECRET"],
+      message: "生产环境必须配置 LINEAR_WEBHOOK_SECRET，否则无法校验 Linear webhook 来源",
+    });
+  }
   if (val.LINEAR_AUTH_MODE === "api_key" && !val.LINEAR_API_KEY) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

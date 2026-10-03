@@ -15,6 +15,8 @@ import {
 } from "../../adapters/linear/client.js";
 import * as linearApi from "../../adapters/linear/api.js";
 import { bindByEmail } from "../../domain/users/mapping.js";
+import { requireBearer } from "./middleware.js";
+import { cleanupOldEvents } from "../../utils/dedup.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("http");
@@ -28,7 +30,7 @@ export function createRouter(
   router.get("/health", (koaCtx) => {
     koaCtx.body = {
       status: "ok",
-      version: "0.2.0",
+      version: "0.3.0",
       uptime: process.uptime(),
       linearAuth: ctx.config.LINEAR_AUTH_MODE,
     };
@@ -51,7 +53,7 @@ export function createRouter(
       return;
     }
     const state = nanoid(24);
-    ctx.db.insert(schema.oauthStates).values({ state }).run();
+    await ctx.db.insert(schema.oauthStates).values({ state });
     koaCtx.redirect(buildAuthorizeUrl(ctx.config, state));
   });
 
@@ -63,20 +65,19 @@ export function createRouter(
       return;
     }
 
-    const row = ctx.db
+    const [row] = await ctx.db
       .select()
       .from(schema.oauthStates)
       .where(eq(schema.oauthStates.state, state))
-      .get();
+      .limit(1);
     if (!row) {
       koaCtx.status = 400;
       koaCtx.body = { error: "无效 state" };
       return;
     }
-    ctx.db
+    await ctx.db
       .delete(schema.oauthStates)
-      .where(eq(schema.oauthStates.state, state))
-      .run();
+      .where(eq(schema.oauthStates.state, state));
 
     try {
       const token = await exchangeCode(ctx.config, code);
@@ -115,7 +116,19 @@ export function createRouter(
     }
   });
 
-  // ── 管理 API ──
+  // ── 定时清理（Vercel Cron 调用；VPS 上由进程内定时器负责）──
+  router.get(
+    "/cron/cleanup",
+    requireBearer(() => ctx.config.CRON_SECRET, "Cron"),
+    async (koaCtx) => {
+      await cleanupOldEvents(ctx.db);
+      koaCtx.body = { ok: true };
+    },
+  );
+
+  // ── 管理 API（Bearer ADMIN_TOKEN）──
+  router.use("/api", requireBearer(() => ctx.config.ADMIN_TOKEN, "管理 API"));
+
   router.post("/api/bind", async (koaCtx) => {
     const body = koaCtx.request.body as Record<string, string>;
     if (!body.feishuOpenId || !body.linearEmail) {
@@ -145,7 +158,7 @@ export function createRouter(
       koaCtx.body = { error: "需要 type 和 linearEntityId" };
       return;
     }
-    const [result] = ctx.db
+    const [result] = await ctx.db
       .insert(schema.notificationConfigs)
       .values({
         type: body.type as "team" | "project" | "initiative" | "view" | "personal",
@@ -159,8 +172,7 @@ export function createRouter(
         onComment: (body.onComment as boolean) ?? true,
         createdBy: body.createdBy as string | undefined,
       })
-      .returning()
-      .all();
+      .returning();
     koaCtx.body = { success: true, config: result };
   });
 
@@ -171,7 +183,7 @@ export function createRouter(
       koaCtx.body = { error: "需要 feishuChatId 和 guidance" };
       return;
     }
-    ctx.db
+    await ctx.db
       .insert(schema.agentGuidance)
       .values({
         feishuChatId: String(body.feishuChatId),
@@ -185,10 +197,8 @@ export function createRouter(
           guidance: String(body.guidance),
           defaultTeamId: body.defaultTeamId as string | undefined,
           defaultProjectId: body.defaultProjectId as string | undefined,
-          updatedAt: new Date().toISOString(),
         },
-      })
-      .run();
+      });
     koaCtx.body = { success: true };
   });
 

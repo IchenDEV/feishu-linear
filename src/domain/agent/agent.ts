@@ -90,11 +90,11 @@ export async function handleAgentMessage(
     baseURL: ctx.config.OPENAI_BASE_URL,
   });
 
-  const guidance = ctx.db
+  const [guidance] = await ctx.db
     .select()
     .from(schema.agentGuidance)
     .where(eq(schema.agentGuidance.feishuChatId, input.chatId))
-    .get();
+    .limit(1);
 
   const system = guidance
     ? `${SYSTEM_PROMPT}\n\n## Agent Guidance\n${guidance.guidance}`

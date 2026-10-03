@@ -17,7 +17,7 @@ src/
 │   └── agent/         # @机器人自然语言（OpenAI tools）
 ├── transport/http/    # Koa 路由
 ├── cards/             # 飞书卡片 JSON 2.0
-├── db/                # SQLite + Drizzle
+├── db/                # Postgres + Drizzle（schema / 迁移）
 └── app/               # AppContext 组装
 ```
 
@@ -40,6 +40,74 @@ npm run dev
 ```
 
 健康检查：`GET /health`
+
+## 数据库
+
+Postgres（任意托管或自建，推荐 [Neon](https://neon.tech)）。`DATABASE_URL` 必填。
+
+```bash
+npm run db:generate   # 改了 src/db/schema.ts 后生成迁移 SQL（提交 drizzle/ 目录）
+npm run db:migrate    # 应用迁移（幂等）
+```
+
+本地开发起一个 Postgres：
+
+```bash
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=fl postgres:17-alpine
+# DATABASE_URL=postgres://postgres:pw@localhost:5432/fl
+```
+
+测试（Postgres 相关用例在设置 `TEST_DATABASE_URL` 时才运行，需先 `db:migrate`）：
+
+```bash
+TEST_DATABASE_URL=postgres://postgres:pw@localhost:5432/fl npm test
+```
+
+## 部署
+
+同一份代码支持两种部署方式；后台任务（先 ACK 再处理）、定时清理、连接池会按运行环境自动适配。
+
+### A. Vercel + Neon（免运维）
+
+1. Neon 建库，复制 **pooled** 连接串（host 含 `-pooler`）作为 `DATABASE_URL`。
+2. 本机对 Neon 执行一次迁移：`DATABASE_URL=<neon 连接串> npm run db:migrate`（以后改 schema 同样先迁移再发版）。
+3. `vercel link && vercel deploy --prod`（或接 Git 仓库）。入口 `src/index.ts` 被识别为 Koa，整个应用是一个 Fluid Function；`vercel.json` 把区域钉在香港 `hkg1`，并配置每日 `/cron/cleanup` 清理。
+4. 在 Vercel 项目里配置 `.env.example` 中的必填项，另加 `CRON_SECRET`（随机串，Vercel 调 Cron 时自动带上）和 `ADMIN_TOKEN`；`PUBLIC_URL` 填你的域名。
+5. 飞书 / Linear 后台的回调地址指向 `https://<域名>/webhook/feishu`、`/webhook/linear`。
+
+注意：Neon 与函数区域尽量靠近；飞书卡片 / 链接预览回调必须 3 秒内返回。
+
+### B. Docker + Caddy（VPS，自动 HTTPS）
+
+要求：一台能访问 Linear / 飞书的服务器（推荐香港 / 新加坡 / 东京），域名已解析到该机，开放 80/443。Postgres 随 compose 一起启动。
+
+```bash
+git clone https://github.com/IchenDEV/feishu-linear && cd feishu-linear
+cp .env.example .env      # 填飞书 / Linear 凭据，并设置：
+#   DOMAIN=linear.example.com
+#   PUBLIC_URL=https://linear.example.com
+#   POSTGRES_PASSWORD=<随机串>    ADMIN_TOKEN=<随机串>
+docker compose up -d --build      # 启动时自动执行迁移
+curl https://linear.example.com/health
+```
+
+- 使用 compose 内置 Postgres 时，`.env` 里的 `DATABASE_URL` 会被 compose 覆盖；改用外部 Postgres 请去掉 `postgres` 服务并修改 `app.environment.DATABASE_URL`。
+- Caddy 放行 `/health`、`/webhook/*`、`/oauth/linear/*`、`/api/*`；`/api/*` 需 `Authorization: Bearer $ADMIN_TOKEN`。
+- 备份：`docker compose exec postgres pg_dump -U feishu_linear feishu_linear > backup.sql`。
+- 更新：`git pull && docker compose up -d --build`；日志：`docker compose logs -f app`。
+
+## 管理 API 鉴权
+
+`/api/*` 需要 `Authorization: Bearer <ADMIN_TOKEN>`；未配置 `ADMIN_TOKEN` 时整体返回 503。
+`/cron/cleanup` 需要 `Authorization: Bearer <CRON_SECRET>`。
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" https://<域名>/api/teams
+```
+
+## 飞书来源校验
+
+飞书 SDK 只在配置 Encrypt Key 时校验签名，不会比对 Verification Token。本项目对每个事件 / 回调额外校验 `header.token`，不匹配返回 401。建议同时在飞书后台开启「加密」并配置 `FEISHU_ENCRYPT_KEY`。
 
 ## 飞书开发者后台配置
 
@@ -98,10 +166,11 @@ npm run dev
 | POST | `/webhook/feishu` | 飞书事件+回调统一入口 |
 | POST | `/webhook/linear` | Linear Webhook |
 | GET | `/oauth/linear/install` | OAuth 安装 |
-| POST | `/api/bind` | 用户绑定 |
+| POST | `/api/bind` | 用户绑定（`/api/*` 均需 Bearer `ADMIN_TOKEN`） |
 | POST | `/api/notification` | 通知配置 |
 | POST | `/api/guidance` | 频道 Agent Guidance |
 | GET | `/api/teams` | 列出 Linear 团队 |
+| GET | `/cron/cleanup` | 清理过期去重记录（Bearer `CRON_SECRET`） |
 
 ## 与旧版差异（本次重构修掉的坑）
 

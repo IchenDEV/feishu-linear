@@ -7,20 +7,22 @@ import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("user-mapping");
 
-export function getMappingByFeishuOpenId(ctx: AppContext, openId: string) {
-  return ctx.db
+export async function getMappingByFeishuOpenId(ctx: AppContext, openId: string) {
+  const [row] = await ctx.db
     .select()
     .from(schema.userMappings)
     .where(eq(schema.userMappings.feishuOpenId, openId))
-    .get();
+    .limit(1);
+  return row;
 }
 
-export function getMappingByLinearUserId(ctx: AppContext, linearUserId: string) {
-  return ctx.db
+export async function getMappingByLinearUserId(ctx: AppContext, linearUserId: string) {
+  const [row] = await ctx.db
     .select()
     .from(schema.userMappings)
     .where(eq(schema.userMappings.linearUserId, linearUserId))
-    .get();
+    .limit(1);
+  return row;
 }
 
 export async function bindByEmail(
@@ -38,7 +40,7 @@ export async function bindByEmail(
     throw new Error(`未找到 Linear 用户: ${opts.linearEmail}`);
   }
 
-  ctx.db
+  await ctx.db
     .insert(schema.userMappings)
     .values({
       feishuOpenId: opts.feishuOpenId,
@@ -57,10 +59,8 @@ export async function bindByEmail(
         linearName: user.name,
         feishuName: opts.feishuName,
         feishuEmail: opts.linearEmail,
-        updatedAt: new Date().toISOString(),
       },
-    })
-    .run();
+    });
 
   log.info(
     { feishuOpenId: opts.feishuOpenId, linear: user.name },
@@ -75,7 +75,7 @@ export async function autoBindFromFeishuUser(
   ctx: AppContext,
   openId: string,
 ): Promise<string | null> {
-  const existing = getMappingByFeishuOpenId(ctx, openId);
+  const existing = await getMappingByFeishuOpenId(ctx, openId);
   if (existing) return existing.linearUserId;
 
   try {

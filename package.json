@@ -1,40 +1,42 @@
 {
   "name": "feishu-linear",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "飞书 × Linear 双向连接器 — 对标 Slack-Linear 集成的飞书版",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm --dts",
+    "build": "tsup src/index.ts src/db/migrate.ts --format esm",
     "start": "node dist/index.js",
-    "db:migrate": "drizzle-kit push",
+    "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
-    "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:prod": "node dist/db/migrate.js"
   },
   "dependencies": {
+    "@koa/router": "^13.1.0",
     "@larksuiteoapi/node-sdk": "^1.73.0",
     "@linear/sdk": "^92.0.0",
-    "better-sqlite3": "^11.0.0",
+    "@vercel/functions": "^3.9.11",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.36.0",
     "koa": "^2.15.0",
-    "@koa/router": "^13.1.0",
     "nanoid": "^5.0.0",
+    "openai": "^4.70.0",
+    "pg": "^8.23.1",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
-    "zod": "^3.23.0",
-    "openai": "^4.70.0"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
     "@types/koa": "^2.15.0",
     "@types/koa__router": "^12.0.0",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.28.0",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",

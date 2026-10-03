@@ -1,5 +1,5 @@
 import { LinearClient } from "@linear/sdk";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Env } from "../../config.js";
 import type { Db } from "../../db/index.js";
 import { schema } from "../../db/index.js";
@@ -42,7 +42,7 @@ export function createLinearClientFactory(config: Env, db: Db) {
         return undefined;
       }
     }
-    const row = db.select().from(schema.linearTokens).all()[0];
+    const [row] = await db.select().from(schema.linearTokens).limit(1);
     cachedAppUserId = row?.appUserId ?? undefined;
     return cachedAppUserId;
   }
@@ -50,49 +50,56 @@ export function createLinearClientFactory(config: Env, db: Db) {
   return { getClient, getAppUserId };
 }
 
-async function ensureOAuthToken(config: Env, db: Db) {
-  const row = db.select().from(schema.linearTokens).all()[0];
+type TokenRow = typeof schema.linearTokens.$inferSelect;
+
+function isFresh(row: TokenRow) {
+  const expiresAt = row.expiresAt ? row.expiresAt.getTime() : 0;
+  return Boolean(expiresAt) && Date.now() <= expiresAt - 5 * 60 * 1000;
+}
+
+async function ensureOAuthToken(config: Env, db: Db): Promise<TokenRow> {
+  const [row] = await db.select().from(schema.linearTokens).limit(1);
   if (!row) {
     throw new Error(
       "尚未完成 Linear OAuth 安装。请访问 /oauth/linear/install",
     );
   }
+  if (isFresh(row)) return row;
 
-  const expiresAt = row.expiresAt ? new Date(row.expiresAt).getTime() : 0;
-  const needsRefresh = !expiresAt || Date.now() > expiresAt - 5 * 60 * 1000;
+  // 多实例并发刷新会让 refresh_token 失效：用事务级 advisory lock 串行化，
+  // 拿到锁后重新读取，若别的实例已刷新则直接复用。
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('linear_token_refresh'))`);
+    const [latest] = await tx
+      .select()
+      .from(schema.linearTokens)
+      .where(eq(schema.linearTokens.organizationId, row.organizationId))
+      .limit(1);
+    const current = latest ?? row;
+    if (isFresh(current)) return current;
 
-  if (!needsRefresh) {
-    return row;
-  }
+    if (!current.refreshToken) {
+      throw new Error(
+        "Linear access token 已过期且无 refresh_token，请重新安装 OAuth",
+      );
+    }
 
-  if (!row.refreshToken) {
-    throw new Error("Linear access token 已过期且无 refresh_token，请重新安装 OAuth");
-  }
+    log.info("刷新 Linear OAuth token");
+    const refreshed = await refreshAccessToken(config, current.refreshToken);
+    const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
 
-  log.info("刷新 Linear OAuth token");
-  const refreshed = await refreshAccessToken(config, row.refreshToken);
-
-  const expiresAtIso = new Date(
-    Date.now() + refreshed.expires_in * 1000,
-  ).toISOString();
-
-  db.update(schema.linearTokens)
-    .set({
-      accessToken: refreshed.access_token,
-      refreshToken: refreshed.refresh_token ?? row.refreshToken,
-      expiresAt: expiresAtIso,
-      scope: refreshed.scope ?? row.scope,
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(schema.linearTokens.organizationId, row.organizationId))
-    .run();
-
-  return {
-    ...row,
-    accessToken: refreshed.access_token,
-    refreshToken: refreshed.refresh_token ?? row.refreshToken,
-    expiresAt: expiresAtIso,
-  };
+    const [updated] = await tx
+      .update(schema.linearTokens)
+      .set({
+        accessToken: refreshed.access_token,
+        refreshToken: refreshed.refresh_token ?? current.refreshToken,
+        expiresAt,
+        scope: refreshed.scope ?? current.scope,
+      })
+      .where(eq(schema.linearTokens.organizationId, current.organizationId))
+      .returning();
+    return updated;
+  });
 }
 
 export function buildAuthorizeUrl(config: Env, state: string): string {
@@ -190,9 +197,9 @@ export async function persistOAuthToken(
     appUserId?: string;
   },
 ) {
-  const expiresAt = new Date(Date.now() + opts.expiresIn * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + opts.expiresIn * 1000);
 
-  db.insert(schema.linearTokens)
+  await db.insert(schema.linearTokens)
     .values({
       organizationId: opts.organizationId,
       accessToken: opts.accessToken,
@@ -209,8 +216,6 @@ export async function persistOAuthToken(
         expiresAt,
         scope: opts.scope,
         appUserId: opts.appUserId,
-        updatedAt: new Date().toISOString(),
       },
-    })
-    .run();
+    });
 }
