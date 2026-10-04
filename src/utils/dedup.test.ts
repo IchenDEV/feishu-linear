@@ -8,7 +8,7 @@ import {
   isDuplicate,
 } from "./dedup.js";
 
-// 需要真实 Postgres：TEST_DATABASE_URL=postgres://… npm test（已执行过 db:migrate）
+// 需要真实 Postgres：TEST_DATABASE_URL=postgres://… pnpm test（已执行过 db:migrate）
 const url = process.env.TEST_DATABASE_URL;
 
 describe("dedup (postgres)", { skip: !url }, () => {

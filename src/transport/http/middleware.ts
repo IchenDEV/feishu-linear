@@ -33,6 +33,32 @@ export const bodyMiddleware: Middleware = async (koaCtx, next) => {
   await next();
 };
 
+/** 访问日志 + Server-Timing：用于观察飞书卡片回调 / 链接预览（3 秒限制）的耗时 */
+export const accessLogMiddleware: Middleware = async (koaCtx, next) => {
+  const start = Date.now();
+  try {
+    await next();
+  } finally {
+    const ms = Date.now() - start;
+    if (!koaCtx.headerSent) koaCtx.set("server-timing", `app;dur=${ms}`);
+    if (koaCtx.path !== "/health") {
+      const body = koaCtx.request.body as
+        | { header?: { event_type?: string }; type?: string }
+        | undefined;
+      logger.info(
+        {
+          method: koaCtx.method,
+          path: koaCtx.path,
+          status: koaCtx.status,
+          ms,
+          event: body?.header?.event_type ?? body?.type,
+        },
+        "request",
+      );
+    }
+  }
+};
+
 export const errorMiddleware: Middleware = async (koaCtx, next) => {
   try {
     await next();

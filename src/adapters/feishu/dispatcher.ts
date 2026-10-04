@@ -51,6 +51,9 @@ export function createFeishuEventDispatcher(ctx: AppContext) {
       runInBackground("feishu-menu", () => handlers.onBotMenu(data));
     }),
 
+    // 已读回执：不处理，仅避免 SDK 报 "no handle" 警告
+    "im.message.message_read_v1": guard(async () => {}),
+
     // 回调：返回值即响应体，必须 3 秒内返回
     "card.action.trigger": guard((data) => handlers.onCardAction(data)),
 

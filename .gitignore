@@ -5,3 +5,11 @@ data/
 *.db
 *.db-journal
 .DS_Store
+.dev.vars
+.wrangler/
+wrangler.jsonc
+.vercel/
+.env.*
+!.env.example
+!.dev.vars.example
+.dev.vars.*
