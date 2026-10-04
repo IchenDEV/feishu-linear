@@ -54,7 +54,7 @@ export async function unfurlLinearUrl(
         if (!issue) return null;
         const team = await issue.team;
         if (team?.private) {
-          log.debug({ issue: issue.identifier }, "私有团队，不展开");
+          log.debug({ issue: issue.identifier }, "Private team; not unfurling");
           return null;
         }
         const synced = Boolean(await findByLinearIssue(ctx, issue.id));
@@ -121,7 +121,7 @@ export async function unfurlLinearUrl(
       }
     }
   } catch (err) {
-    log.warn({ err, url }, "链接展开失败");
+    log.warn({ err, url }, "Link unfurl failed");
   }
   return null;
 }

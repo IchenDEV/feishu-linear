@@ -18,7 +18,7 @@ export function createLinearClientFactory(config: Env, db: Db) {
     if (config.LINEAR_AUTH_MODE === "api_key") {
       if (!cached) {
         cached = new LinearClient({ apiKey: config.LINEAR_API_KEY });
-        log.info("Linear client: api_key 模式");
+        log.info("Linear client: api_key mode");
       }
       return cached;
     }
@@ -38,7 +38,7 @@ export function createLinearClientFactory(config: Env, db: Db) {
         cachedAppUserId = viewer.id;
         return cachedAppUserId;
       } catch (err) {
-        log.warn({ err }, "获取 Linear viewer 失败");
+        log.warn({ err }, "Failed to fetch the Linear viewer");
         return undefined;
       }
     }
@@ -68,7 +68,7 @@ async function ensureOAuthToken(config: Env, db: Db): Promise<TokenRow> {
   const [row] = await db.select().from(schema.linearTokens).limit(1);
   if (!row) {
     throw new Error(
-      "尚未完成 Linear OAuth 安装。请访问 /oauth/linear/install",
+      "Linear OAuth is not installed yet. Visit /oauth/linear/install",
     );
   }
   if (isFresh(row)) return row;
@@ -87,11 +87,11 @@ async function ensureOAuthToken(config: Env, db: Db): Promise<TokenRow> {
 
     if (!current.refreshToken) {
       throw new Error(
-        "Linear access token 已过期且无 refresh_token，请重新安装 OAuth",
+        "The Linear access token expired and there is no refresh_token. Re-install the OAuth app",
       );
     }
 
-    log.info("刷新 Linear OAuth token");
+    log.info("Refreshing the Linear OAuth token");
     const refreshed = await refreshAccessToken(config, current.refreshToken);
     const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
 

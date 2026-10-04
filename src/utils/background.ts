@@ -30,7 +30,7 @@ export function runInBackground(
 ): void {
   const p = new Promise<void>((resolve) => setImmediate(resolve))
     .then(task)
-    .catch((err) => log.error({ err, task: name }, "后台任务失败"));
+    .catch((err) => log.error({ err, task: name }, "Background task failed"));
   // per-request 数据库：登记任务，请求连接池要等它结束后才关闭
   currentDbScope()?.tasks.push(p);
   waitUntil(p);

@@ -51,7 +51,7 @@ async function resolveTeam(env: ToolEnv, linear: LinearClient, nameOrKey?: strin
     const t =
       teams.find((x) => eq(x.key, nameOrKey) || eq(x.name, nameOrKey)) ??
       teams.find((x) => has(x.name, nameOrKey));
-    if (!t) throw new Error(`未找到团队 "${nameOrKey}"，可用：${teams.map((x) => `${x.name}(${x.key})`).join("、")}`);
+    if (!t) throw new Error(`Team "${nameOrKey}" not found. Available: ${teams.map((x) => `${x.name}(${x.key})`).join(", ")}`);
     return t;
   }
   if (env.chatId) {
@@ -59,7 +59,7 @@ async function resolveTeam(env: ToolEnv, linear: LinearClient, nameOrKey?: strin
     const t = teams.find((x) => x.id === d.teamId);
     if (t) return t;
   }
-  if (!teams[0]) throw new Error("工作区里没有团队");
+  if (!teams[0]) throw new Error("The workspace has no teams");
   return teams[0];
 }
 
@@ -70,21 +70,21 @@ async function resolveProjectId(env: ToolEnv, linear: LinearClient, name?: strin
   }
   const projects = await linearApi.getProjects(linear);
   const p = projects.find((x) => eq(x.name, name)) ?? projects.find((x) => has(x.name, name));
-  if (!p) throw new Error(`未找到项目 "${name}"`);
+  if (!p) throw new Error(`Project "${name}" not found`);
   return p.id;
 }
 
 async function resolveUserId(env: ToolEnv, linear: LinearClient, who?: string) {
   if (!who) return undefined;
-  if (/^(me|self|我|自己)$/i.test(who.trim())) {
-    if (!env.openId) throw new Error('无法解析"我"：当前没有绑定的用户');
+  if (/^(me|self|myself|我|自己)$/i.test(who.trim())) {
+    if (!env.openId) throw new Error('Cannot resolve "me": there is no linked user for this request');
     return (await requireLinearIdentity(env.ctx, env.openId)).linearUserId;
   }
   const users = await linearApi.getUsers(linear);
   const u =
     users.find((x) => eq(x.email, who) || eq(x.name, who) || eq(x.displayName, who)) ??
     users.find((x) => has(x.name, who) || has(x.displayName, who));
-  if (!u) throw new Error(`未找到用户 "${who}"`);
+  if (!u) throw new Error(`User "${who}" not found`);
   return u.id;
 }
 
@@ -92,7 +92,7 @@ async function resolveState(linear: LinearClient, teamId: string, name?: string)
   if (!name) return undefined;
   const states = await linearApi.getWorkflowStates(linear, teamId);
   const s = states.find((x) => eq(x.name, name)) ?? states.find((x) => has(x.name, name));
-  if (!s) throw new Error(`未找到状态 "${name}"，可用：${states.map((x) => x.name).join("、")}`);
+  if (!s) throw new Error(`Status "${name}" not found. Available: ${states.map((x) => x.name).join(", ")}`);
   return s.id;
 }
 
@@ -101,7 +101,7 @@ async function resolveLabelIds(linear: LinearClient, teamId: string, names?: str
   const labels = await linearApi.getLabels(linear, teamId);
   return names.map((n) => {
     const l = labels.find((x) => eq(x.name, n)) ?? labels.find((x) => has(x.name, n));
-    if (!l) throw new Error(`未找到标签 "${n}"`);
+    if (!l) throw new Error(`Label "${n}" not found`);
     return l.id;
   });
 }
@@ -109,7 +109,7 @@ async function resolveLabelIds(linear: LinearClient, teamId: string, names?: str
 async function writer(env: ToolEnv) {
   if (!env.openId) return { name: "", who: attribute(env.ctx, ""), identity: null };
   const identity = await requireLinearIdentity(env.ctx, env.openId);
-  const name = await getFeishuUserName(env.ctx, env.openId, identity.linearName ?? "飞书用户");
+  const name = await getFeishuUserName(env.ctx, env.openId, identity.linearName ?? "Feishu user");
   return { name, who: attribute(env.ctx, name), identity };
 }
 
@@ -126,7 +126,7 @@ async function summarize(issue: NonNullable<Awaited<ReturnType<typeof linearApi.
     title: issue.title,
     status: state?.name,
     assignee: assignee?.name ?? null,
-    priority: ["无", "Urgent", "High", "Medium", "Low"][issue.priority] ?? issue.priority,
+    priority: ["None", "Urgent", "High", "Medium", "Low"][issue.priority] ?? issue.priority,
     team: team?.name,
     project: project?.name ?? null,
     labels,
@@ -138,7 +138,7 @@ async function summarize(issue: NonNullable<Awaited<ReturnType<typeof linearApi.
 async function getIssueOrThrow(linear: LinearClient, key: string) {
   const k = key.match(/([A-Za-z][A-Za-z0-9]*-\d+)/)?.[1]?.toUpperCase() ?? key;
   const issue = await linearApi.getIssue(linear, k);
-  if (!issue) throw new Error(`未找到 Issue ${key}`);
+  if (!issue) throw new Error(`Issue ${key} not found`);
   return issue;
 }
 
@@ -147,8 +147,8 @@ async function getIssueOrThrow(linear: LinearClient, key: string) {
 export const linearTools: ToolDef[] = [
   {
     name: "search_issues",
-    description: "全文搜索 Issue",
-    parameters: obj({ query: str("关键词"), limit: { type: "number" } }, ["query"]),
+    description: "Full-text search for issues",
+    parameters: obj({ query: str("Search keywords"), limit: { type: "number" } }, ["query"]),
     run: async ({ ctx }, a) => {
       const linear = await ctx.getLinear();
       const res = await linearApi.searchIssues(linear, a.query, Math.min(a.limit ?? 8, 20));
@@ -158,11 +158,11 @@ export const linearTools: ToolDef[] = [
   },
   {
     name: "list_issues",
-    description: "按条件列出 Issue（团队/项目/负责人/状态类型），按更新时间倒序",
+    description: "List issues by team / project / assignee / status type, most recently updated first",
     parameters: obj({
-      team: str("团队名或 key"),
-      project: str("项目名"),
-      assignee: str('负责人：姓名/邮箱，或 "me"'),
+      team: str("Team name or key"),
+      project: str("Project name"),
+      assignee: str('Assignee: name or email, or "me"'),
       stateTypes: {
         type: "array",
         items: { type: "string", enum: ["triage", "backlog", "unstarted", "started", "completed", "canceled"] },
@@ -183,8 +183,8 @@ export const linearTools: ToolDef[] = [
   },
   {
     name: "get_issue",
-    description: "获取 Issue 详情，含描述与最近评论",
-    parameters: obj({ issue: str("编号如 ENG-123，或链接") }, ["issue"]),
+    description: "Get issue details, including the description and recent comments",
+    parameters: obj({ issue: str("Issue key such as ENG-123, or a URL") }, ["issue"]),
     run: async ({ ctx }, a) => {
       const linear = await ctx.getLinear();
       const issue = await getIssueOrThrow(linear, a.issue);
@@ -201,22 +201,22 @@ export const linearTools: ToolDef[] = [
   {
     name: "create_issue",
     description:
-      "创建 Issue。未指定团队/项目时使用本群默认值。attachContextFiles=true 会把当前对话里的图片/文件一并上传到 Issue。",
+      "Create an issue. Uses the channel defaults when team/project are omitted. attachContextFiles=true uploads images/files from the current conversation to the issue.",
     write: true,
     parameters: obj(
       {
-        title: str("标题"),
-        description: str("描述（Markdown）"),
-        team: str("团队名或 key"),
-        project: str("项目名"),
-        assignee: str('负责人：姓名/邮箱，或 "me"'),
+        title: str("Title"),
+        description: str("Description (Markdown)"),
+        team: str("Team name or key"),
+        project: str("Project name"),
+        assignee: str('Assignee: name or email, or "me"'),
         priority: { type: "number", enum: [0, 1, 2, 3, 4], description: "1=Urgent 4=Low" },
-        status: str("状态名"),
+        status: str("Status name"),
         labels: { type: "array", items: { type: "string" } },
-        template: str("模板名（可选）"),
-        dueDate: str("截止日期 YYYY-MM-DD"),
+        template: str("Template name (optional)"),
+        dueDate: str("Due date, YYYY-MM-DD"),
         attachContextFiles: { type: "boolean" },
-        syncThread: { type: "boolean", description: "创建后把当前飞书话题与该 Issue 同步" },
+        syncThread: { type: "boolean", description: "After creating, sync the current Feishu thread with the issue" },
       },
       ["title"],
     ),
@@ -280,18 +280,18 @@ async function createIssueTool(env: ToolEnv, a: Record<string, any>) {
 linearTools.push(
   {
     name: "update_issue",
-    description: "更新 Issue 的标题/描述/状态/负责人/优先级/标签/项目/截止日期",
+    description: "Update an issue's title, description, status, assignee, priority, labels, project or due date",
     write: true,
     parameters: obj(
       {
-        issue: str("编号或链接"),
-        title: str("新标题"),
-        description: str("新描述（会覆盖）"),
-        status: str("状态名"),
-        assignee: str('负责人：姓名/邮箱，"me"，或 "none" 取消分配'),
+        issue: str("Issue key or URL"),
+        title: str("New title"),
+        description: str("New description (replaces the existing one)"),
+        status: str("Status name"),
+        assignee: str('Assignee: name or email, "me", or "none" to unassign'),
         priority: { type: "number", enum: [0, 1, 2, 3, 4] },
-        labels: { type: "array", items: { type: "string" }, description: "完整标签列表（覆盖）" },
-        project: str('项目名，或 "none" 移出项目'),
+        labels: { type: "array", items: { type: "string" }, description: "Complete list of labels (replaces existing labels)" },
+        project: str('Project name, or "none" to remove from the project'),
         dueDate: str("YYYY-MM-DD"),
       },
       ["issue"],
@@ -301,13 +301,13 @@ linearTools.push(
       await writer(env);
       const issue = await getIssueOrThrow(linear, a.issue);
       const team = await issue.team;
-      if (!team) throw new Error("Issue 没有团队");
+      if (!team) throw new Error("The issue has no team");
       const patch: Record<string, unknown> = {};
       if (a.title) patch.title = a.title;
       if (a.description) patch.description = a.description;
       if (a.status) patch.stateId = await resolveState(linear, team.id, a.status);
       if (a.assignee) {
-        patch.assigneeId = /^(none|无|取消)$/i.test(a.assignee)
+        patch.assigneeId = /^(none|unassign|无|取消)$/i.test(a.assignee)
           ? null
           : await resolveUserId(env, linear, a.assignee);
       }
@@ -326,9 +326,9 @@ linearTools.push(
   },
   {
     name: "comment_on_issue",
-    description: "在 Issue 上发表评论",
+    description: "Post a comment on an issue",
     write: true,
-    parameters: obj({ issue: str("编号或链接"), body: str("评论内容 Markdown") }, ["issue", "body"]),
+    parameters: obj({ issue: str("Issue key or URL"), body: str("Comment body (Markdown)") }, ["issue", "body"]),
     run: async (env, a) => {
       const linear = await env.ctx.getLinear();
       const w = await writer(env);
@@ -343,12 +343,12 @@ linearTools.push(
   },
   {
     name: "relate_issues",
-    description: "建立 Issue 关系：blocks / related / duplicate（issue 是 relatedIssue 的重复）",
+    description: "Create an issue relation: blocks / related / duplicate (issue is a duplicate of relatedIssue)",
     write: true,
     parameters: obj(
       {
-        issue: str("编号"),
-        relatedIssue: str("编号"),
+        issue: str("Issue key"),
+        relatedIssue: str("Issue key"),
         type: { type: "string", enum: ["blocks", "related", "duplicate"] },
       },
       ["issue", "relatedIssue", "type"],
@@ -370,11 +370,11 @@ linearTools.push(
   },
   {
     name: "subscribe_issue",
-    description: "为发起人订阅 / 取消订阅 Issue",
+    description: "Subscribe the requester to / unsubscribe the requester from an issue",
     write: true,
-    parameters: obj({ issue: str("编号"), subscribe: { type: "boolean" } }, ["issue"]),
+    parameters: obj({ issue: str("Issue key"), subscribe: { type: "boolean" } }, ["issue"]),
     run: async (env, a) => {
-      if (!env.openId) throw new Error("需要飞书用户身份");
+      if (!env.openId) throw new Error("A Feishu user identity is required");
       const { setIssueSubscription } = await import("../issues/service.js");
       return setIssueSubscription(env.ctx, {
         issueKey: a.issue,
@@ -385,15 +385,15 @@ linearTools.push(
   },
   {
     name: "list_teams",
-    description: "列出团队",
+    description: "List teams",
     parameters: obj({}),
     run: async ({ ctx }) =>
       (await linearApi.getTeams(await ctx.getLinear())).map((t) => ({ name: t.name, key: t.key })),
   },
   {
     name: "list_projects",
-    description: "列出项目",
-    parameters: obj({ team: str("团队名或 key（可选）") }),
+    description: "List projects",
+    parameters: obj({ team: str("Team name or key (optional)") }),
     run: async (env) => {
       const linear = await env.ctx.getLinear();
       const projects = await linearApi.getProjects(linear, 100);
@@ -402,8 +402,8 @@ linearTools.push(
   },
   {
     name: "list_workflow_states",
-    description: "列出团队的工作流状态",
-    parameters: obj({ team: str("团队名或 key") }),
+    description: "List the workflow states of a team",
+    parameters: obj({ team: str("Team name or key") }),
     run: async (env, a) => {
       const linear = await env.ctx.getLinear();
       const team = await resolveTeam(env, linear, a.team);
@@ -412,8 +412,8 @@ linearTools.push(
   },
   {
     name: "list_labels",
-    description: "列出团队标签",
-    parameters: obj({ team: str("团队名或 key") }),
+    description: "List the labels of a team",
+    parameters: obj({ team: str("Team name or key") }),
     run: async (env, a) => {
       const linear = await env.ctx.getLinear();
       const team = await resolveTeam(env, linear, a.team);
@@ -422,8 +422,8 @@ linearTools.push(
   },
   {
     name: "list_users",
-    description: "列出/搜索工作区成员",
-    parameters: obj({ query: str("姓名或邮箱关键字（可选）") }),
+    description: "List or search workspace members",
+    parameters: obj({ query: str("Name or email keyword (optional)") }),
     run: async ({ ctx }, a) => {
       const users = await linearApi.getUsers(await ctx.getLinear());
       return users
@@ -434,7 +434,7 @@ linearTools.push(
   },
   {
     name: "list_initiatives",
-    description: "列出 Initiative",
+    description: "List initiatives",
     parameters: obj({}),
     run: async ({ ctx }) =>
       (await linearApi.getInitiatives(await ctx.getLinear())).map((i) => ({
@@ -445,8 +445,8 @@ linearTools.push(
   },
   {
     name: "list_issue_templates",
-    description: "列出团队可用的 Issue 模板（最多 10 个）",
-    parameters: obj({ team: str("团队名或 key") }),
+    description: "List the issue templates available to a team (up to 10)",
+    parameters: obj({ team: str("Team name or key") }),
     run: async (env, a) => {
       const linear = await env.ctx.getLinear();
       const team = await resolveTeam(env, linear, a.team);
@@ -455,12 +455,12 @@ linearTools.push(
   },
   {
     name: "get_project",
-    description: "获取项目详情与最近的项目更新",
-    parameters: obj({ project: str("项目名") }, ["project"]),
+    description: "Get project details and recent project updates",
+    parameters: obj({ project: str("Project name") }, ["project"]),
     run: async (env, a) => {
       const linear = await env.ctx.getLinear();
       const id = await resolveProjectId(env, linear, a.project);
-      if (!id) throw new Error("未找到项目");
+      if (!id) throw new Error("Project not found");
       const p = await linearApi.getProject(linear, id);
       const updates = await linearApi.getProjectUpdates(linear, id, 3);
       return {
@@ -477,10 +477,10 @@ linearTools.push(
   },
   {
     name: "create_document",
-    description: "在 Linear 创建文档（可挂在项目或 Issue 下）",
+    description: "Create a Linear document (optionally attached to a project or an issue)",
     write: true,
     parameters: obj(
-      { title: str("标题"), content: str("Markdown 内容"), project: str("项目名"), issue: str("Issue 编号") },
+      { title: str("Title"), content: str("Markdown content"), project: str("Project name"), issue: str("Issue key") },
       ["title", "content"],
     ),
     run: async (env, a) => {

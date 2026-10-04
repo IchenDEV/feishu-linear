@@ -20,12 +20,12 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 const feishuTools: ToolDef[] = [
   {
     name: "feishu_read_messages",
-    description: "读取飞书群聊或话题的历史消息（文本化，含附件名）",
+    description: "Read message history from a Feishu chat or thread (plain text, including attachment names)",
     parameters: obj(
       {
-        chatId: { type: "string", description: "群 chat_id（oc_ 开头）" },
-        threadId: { type: "string", description: "话题 id（omt_ 开头），填了则读话题" },
-        limit: { type: "number", description: "最多 50" },
+        chatId: { type: "string", description: "Chat ID (starts with oc_)" },
+        threadId: { type: "string", description: "Thread ID (starts with omt_). When set, the thread is read instead" },
+        limit: { type: "number", description: "Maximum 50" },
       },
       ["chatId"],
     ),
@@ -41,7 +41,7 @@ const feishuTools: ToolDef[] = [
           .filter((m) => !m.deleted)
           .map(async (m) => {
             const p = parseMessage(m.messageId, m.msgType, m.content);
-            let who = "助手";
+            let who = "Assistant";
             if (m.senderType === "user" && m.senderId) {
               if (!names.has(m.senderId)) names.set(m.senderId, await getFeishuUserName(ctx, m.senderId));
               who = names.get(m.senderId)!;
@@ -59,7 +59,7 @@ const feishuTools: ToolDef[] = [
   },
   {
     name: "feishu_send_message",
-    description: "以机器人身份向飞书群发送一条文本消息",
+    description: "Send a text message to a Feishu chat as the bot",
     write: true,
     parameters: obj({ chatId: { type: "string" }, text: { type: "string" } }, ["chatId", "text"]),
     run: async ({ ctx }, a) => {
@@ -69,7 +69,7 @@ const feishuTools: ToolDef[] = [
   },
   {
     name: "feishu_reply_message",
-    description: "回复一条飞书消息（可选在话题内回复）",
+    description: "Reply to a Feishu message (optionally inside a thread)",
     write: true,
     parameters: obj(
       { messageId: { type: "string" }, text: { type: "string" }, inThread: { type: "boolean" } },
@@ -82,7 +82,7 @@ const feishuTools: ToolDef[] = [
   },
   {
     name: "linear_sync_feishu_thread",
-    description: "让一个飞书话题与 Linear Issue 双向同步（以 rootMessageId 为话题根消息）",
+    description: "Two-way sync a Feishu thread with a Linear issue (rootMessageId is the thread root message)",
     write: true,
     parameters: obj(
       { issue: { type: "string" }, chatId: { type: "string" }, rootMessageId: { type: "string" } },
@@ -99,7 +99,7 @@ const feishuTools: ToolDef[] = [
   },
   {
     name: "linear_get_synced_thread",
-    description: "查询某个 Linear Issue 是否已与飞书话题同步",
+    description: "Check whether a Linear issue is already synced with a Feishu thread",
     parameters: obj({ issueId: { type: "string", description: "Issue UUID" } }, ["issueId"]),
     run: async ({ ctx }, a) => {
       const t = await findByLinearIssue(ctx, a.issueId);
@@ -136,7 +136,7 @@ export async function handleRpc(ctx: AppContext, req: RpcRequest) {
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "feishu-linear", version: "0.4.0" },
         instructions:
-          "Linear 工具用于查询与修改 Issue/项目；feishu_* 工具用于读取与发送飞书消息，linear_sync_feishu_thread 可把飞书话题与 Issue 同步。",
+          "Linear tools query and modify issues and projects; feishu_* tools read and send Feishu messages; linear_sync_feishu_thread syncs a Feishu thread with an issue.",
       });
     case "ping":
       return ok(id, {});
@@ -150,7 +150,7 @@ export async function handleRpc(ctx: AppContext, req: RpcRequest) {
       });
     case "tools/call": {
       const tool = mcpTools.find((t) => t.name === params?.name);
-      if (!tool) return err(id, -32602, `未知工具 ${params?.name}`);
+      if (!tool) return err(id, -32602, `Unknown tool ${params?.name}`);
       try {
         const out = await tool.run({ ctx }, params?.arguments ?? {});
         return ok(id, {
@@ -164,6 +164,6 @@ export async function handleRpc(ctx: AppContext, req: RpcRequest) {
       }
     }
     default:
-      return err(id, -32601, `不支持的方法 ${method}`);
+      return err(id, -32601, `Unsupported method ${method}`);
   }
 }

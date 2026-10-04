@@ -21,7 +21,7 @@ export function closeScopeLater(scope: RequestDbScope) {
         seen = scope.tasks.length;
         await Promise.allSettled(batch);
       }
-      await scope.pool.end().catch((err) => log.warn({ err }, "关闭连接池失败"));
+      await scope.pool.end().catch((err) => log.warn({ err }, "Failed to close the pool"));
     })(),
   );
 }

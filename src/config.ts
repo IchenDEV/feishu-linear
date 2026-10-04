@@ -25,6 +25,10 @@ const envSchema = z.object({
     .string()
     .default("read,write,issues:create,comments:create,app:assignable,app:mentionable"),
 
+  // ── 界面语言 ──
+  /** 默认界面语言：zh-CN | en。可被工作区、群、个人设置覆盖（/linear lang） */
+  DEFAULT_LOCALE: z.enum(["zh-CN", "en"]).default("zh-CN"),
+
   // ── 链接展开 ──
   /** 飞书后台已配置「链接预览」时保持 true（链接由飞书原生展开）；否则设为 false，由机器人回复卡片展开 */
   FEISHU_LINK_PREVIEW: z
@@ -47,8 +51,8 @@ const envSchema = z.object({
   /** Postgres 连接串（Vercel 上请用 Neon 的 pooled 连接串） */
   DATABASE_URL: z
     .string()
-    .regex(/^postgres(ql)?:\/\//, "DATABASE_URL 必须是 postgres:// 或 postgresql:// 连接串"),
-  /** 管理 API（/api/*）的 Bearer Token；留空则管理 API 整体禁用 */
+    .regex(/^postgres(ql)?:\/\//, "DATABASE_URL must be a postgres:// or postgresql:// connection string"),
+  /** Admin API（/api/*）的 Bearer Token；留空则Admin API 整体禁用 */
   ADMIN_TOKEN: z.string().default(""),
   /** Vercel Cron 调用 /cron/* 时携带的 Bearer Token（Vercel 自动注入 CRON_SECRET） */
   CRON_SECRET: z.string().default(""),
@@ -61,14 +65,14 @@ const envSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["LINEAR_WEBHOOK_SECRET"],
-      message: "生产环境必须配置 LINEAR_WEBHOOK_SECRET，否则无法校验 Linear webhook 来源",
+      message: "LINEAR_WEBHOOK_SECRET is required in production; otherwise Linear webhooks cannot be verified",
     });
   }
   if (val.LINEAR_AUTH_MODE === "api_key" && !val.LINEAR_API_KEY) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["LINEAR_API_KEY"],
-      message: "LINEAR_AUTH_MODE=api_key 时必须提供 LINEAR_API_KEY",
+      message: "LINEAR_API_KEY is required when LINEAR_AUTH_MODE=api_key",
     });
   }
   if (val.LINEAR_AUTH_MODE === "oauth") {
@@ -76,14 +80,14 @@ const envSchema = z.object({
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["LINEAR_CLIENT_ID"],
-        message: "LINEAR_AUTH_MODE=oauth 时必须提供 LINEAR_CLIENT_ID",
+        message: "LINEAR_CLIENT_ID is required when LINEAR_AUTH_MODE=oauth",
       });
     }
     if (!val.LINEAR_CLIENT_SECRET) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["LINEAR_CLIENT_SECRET"],
-        message: "LINEAR_AUTH_MODE=oauth 时必须提供 LINEAR_CLIENT_SECRET",
+        message: "LINEAR_CLIENT_SECRET is required when LINEAR_AUTH_MODE=oauth",
       });
     }
   }
@@ -91,14 +95,28 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Env {
+export type ConfigResult =
+  | { ok: true; config: Env }
+  | { ok: false; issues: Array<{ path: string; message: string }> };
+
+/** 校验环境变量但不退出进程（供 doctor 等工具使用） */
+export function loadConfigResult(env: NodeJS.ProcessEnv = process.env): ConfigResult {
   const result = envSchema.safeParse(env);
-  if (!result.success) {
-    console.error("❌ 环境变量校验失败:");
-    for (const issue of result.error.issues) {
-      console.error(`  ${issue.path.join(".")}: ${issue.message}`);
+  if (result.success) return { ok: true, config: result.data };
+  return {
+    ok: false,
+    issues: result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+  };
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Env {
+  const result = loadConfigResult(env);
+  if (!result.ok) {
+    console.error("❌ Invalid environment configuration:");
+    for (const issue of result.issues) {
+      console.error(`  ${issue.path}: ${issue.message}`);
     }
     process.exit(1);
   }
-  return result.data;
+  return result.config;
 }

@@ -34,7 +34,7 @@ export function createRouter(
   router.get("/health", (koaCtx) => {
     koaCtx.body = {
       status: "ok",
-      version: "0.3.0",
+      version: "0.4.0",
       uptime: process.uptime(),
       linearAuth: ctx.config.LINEAR_AUTH_MODE,
     };
@@ -56,7 +56,7 @@ export function createRouter(
   router.get("/oauth/linear/install", async (koaCtx) => {
     if (ctx.config.LINEAR_AUTH_MODE !== "oauth") {
       koaCtx.status = 400;
-      koaCtx.body = { error: "当前 LINEAR_AUTH_MODE 不是 oauth" };
+      koaCtx.body = { error: "LINEAR_AUTH_MODE is not oauth" };
       return;
     }
     const state = nanoid(24);
@@ -68,7 +68,7 @@ export function createRouter(
     const { code, state } = koaCtx.query as Record<string, string>;
     if (!code || !state) {
       koaCtx.status = 400;
-      koaCtx.body = { error: "缺少 code/state" };
+      koaCtx.body = { error: "Missing code/state" };
       return;
     }
 
@@ -79,7 +79,7 @@ export function createRouter(
       .limit(1);
     if (!row) {
       koaCtx.status = 400;
-      koaCtx.body = { error: "无效 state" };
+      koaCtx.body = { error: "Invalid state" };
       return;
     }
     await ctx.db
@@ -105,17 +105,17 @@ export function createRouter(
 
       log.info(
         { org: org.name, appUser: viewer.id },
-        "Linear OAuth 安装成功",
+        "Linear OAuth installed",
       );
 
       koaCtx.body = {
         success: true,
         organization: org.name,
         appUserId: viewer.id,
-        message: "Linear 应用已安装。可将 LINEAR_APP_USER_ID 设为 appUserId。",
+        message: "Linear app installed. You can set LINEAR_APP_USER_ID to the appUserId.",
       };
     } catch (err) {
-      log.error({ err }, "OAuth callback 失败");
+      log.error({ err }, "OAuth callback failed");
       koaCtx.status = 500;
       koaCtx.body = {
         error: err instanceof Error ? err.message : String(err),
@@ -163,14 +163,14 @@ export function createRouter(
     },
   );
 
-  // ── 管理 API（Bearer ADMIN_TOKEN）──
-  router.use("/api", requireBearer(() => ctx.config.ADMIN_TOKEN, "管理 API"));
+  // ── Admin API（Bearer ADMIN_TOKEN）──
+  router.use("/api", requireBearer(() => ctx.config.ADMIN_TOKEN, "Admin API"));
 
   router.post("/api/bind", async (koaCtx) => {
     const body = koaCtx.request.body as Record<string, string>;
     if (!body.feishuOpenId || !body.linearEmail) {
       koaCtx.status = 400;
-      koaCtx.body = { error: "需要 feishuOpenId 和 linearEmail" };
+      koaCtx.body = { error: "feishuOpenId and linearEmail are required" };
       return;
     }
     try {
@@ -192,7 +192,7 @@ export function createRouter(
     const body = koaCtx.request.body as Record<string, unknown>;
     if (!body.type || !body.linearEntityId) {
       koaCtx.status = 400;
-      koaCtx.body = { error: "需要 type 和 linearEntityId" };
+      koaCtx.body = { error: "type and linearEntityId are required" };
       return;
     }
     const [result] = await ctx.db
@@ -217,7 +217,7 @@ export function createRouter(
     const body = koaCtx.request.body as Record<string, unknown>;
     if (!body.feishuChatId || !body.guidance) {
       koaCtx.status = 400;
-      koaCtx.body = { error: "需要 feishuChatId 和 guidance" };
+      koaCtx.body = { error: "feishuChatId and guidance are required" };
       return;
     }
     await ctx.db
@@ -244,7 +244,7 @@ export function createRouter(
     const b = koaCtx.request.body as Record<string, string>;
     if (!b.issueKey || !b.chatId || !b.rootMessageId) {
       koaCtx.status = 400;
-      koaCtx.body = { error: "需要 issueKey、chatId、rootMessageId" };
+      koaCtx.body = { error: "issueKey, chatId and rootMessageId are required" };
       return;
     }
     try {
@@ -265,7 +265,7 @@ export function createRouter(
     const b = koaCtx.request.body as Record<string, string>;
     if (!b.projectId) {
       koaCtx.status = 400;
-      koaCtx.body = { error: "需要 projectId" };
+      koaCtx.body = { error: "projectId is required" };
       return;
     }
     try {

@@ -9,6 +9,8 @@ import {
   parseMessage,
   uploadAttachmentsToLinear,
 } from "../messages/content.js";
+import { t } from "../../i18n/index.js";
+import { runLocalized } from "../../i18n/resolve.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("sync-threads");
@@ -54,11 +56,11 @@ export async function createSyncThread(
       linear,
       opts.linearIssueId,
       link,
-      `飞书同步线程 · ${opts.linearIssueIdentifier}`,
+      t("sync.attachmentTitle", { id: opts.linearIssueIdentifier }),
     );
     attachmentId = (await payload.attachment)?.id;
   } catch (err) {
-    log.warn({ err }, "创建 Linear attachment 失败（非致命）");
+    log.warn({ err }, "Failed to create the Linear attachment (non-fatal)");
   }
 
   const [row] = await ctx.db
@@ -72,7 +74,7 @@ export async function createSyncThread(
 
   log.info(
     { threadId: opts.feishuThreadId, issue: opts.linearIssueIdentifier },
-    "同步线程已建立",
+    "Synced thread established",
   );
   return row;
 }
@@ -84,16 +86,16 @@ export async function createSyncThreadForIssue(
 ) {
   const linear = await ctx.getLinear();
   const issue = await linearApi.getIssue(linear, opts.issueKey);
-  if (!issue) throw new Error(`未找到 Issue ${opts.issueKey}`);
+  if (!issue) throw new Error(t("issue.notFound", { key: opts.issueKey }));
   const res = await feishu.replyText(
     ctx.lark,
     opts.rootMessageId,
-    `🔗 已与 Linear ${issue.identifier} 建立同步`,
+    t("sync.established", { id: issue.identifier }),
     true,
   );
   const data = (res as { data?: Record<string, unknown> }).data ?? {};
   const threadId = data.thread_id as string | undefined;
-  if (!threadId) throw new Error("未能创建话题（回复未返回 thread_id）");
+  if (!threadId) throw new Error(t("sync.noThreadId"));
   return createSyncThread(ctx, {
     feishuChatId: opts.chatId,
     feishuThreadId: threadId,
@@ -142,7 +144,7 @@ export async function syncFeishuMessageToLinear(
   const oauth = ctx.config.LINEAR_AUTH_MODE === "oauth";
   const comment = await linearApi.createComment(linear, {
     issueId: thread.linearIssueId,
-    body: oauth ? text : `**${opts.senderName}**（来自飞书）：\n\n${text}`,
+    body: oauth ? text : `${t("sync.fromFeishuPrefix", { name: opts.senderName })}\n\n${text}`,
     createAsUser: oauth ? opts.senderName : undefined,
   });
 
@@ -160,7 +162,12 @@ export async function syncFeishuMessageToLinear(
 
 // ───────────────────────── Linear → 飞书 ─────────────────────────
 
-export const FROM_FEISHU_MARK = "（来自飞书）";
+/** 我们写入 Linear 的评论带有这些标记（各语言一致），用于识别回声，不能随界面语言变化 */
+export const FROM_FEISHU_MARKS = ["（来自飞书）", "(via Feishu)"];
+export const isFromFeishu = (body: string) => {
+  const head = body.slice(0, 200);
+  return FROM_FEISHU_MARKS.some((m) => head.includes(m));
+};
 
 export async function syncLinearCommentToFeishu(
   ctx: AppContext,
@@ -173,8 +180,8 @@ export async function syncLinearCommentToFeishu(
 ) {
   const thread = await findByLinearIssue(ctx, opts.linearIssueId);
   if (!thread?.syncEnabled) return null;
-  // 我们自己从飞书写入的评论（api_key 模式没有机器人身份可过滤）
-  if (opts.body.slice(0, 200).includes(FROM_FEISHU_MARK)) return null;
+  // 我们自己从飞书写入的评论（api_key mode没有机器人身份可过滤）
+  if (isFromFeishu(opts.body)) return null;
 
   const [existing] = await ctx.db
     .select()
@@ -184,7 +191,9 @@ export async function syncLinearCommentToFeishu(
   if (existing) return existing;
 
   const { text, assets } = extractLinearAssets(opts.body);
-  const head = `💬 **${opts.actorName}**（来自 Linear）`;
+  const head = await runLocalized(ctx, { chatId: thread.feishuChatId }, async () =>
+    t("sync.fromLinear", { name: opts.actorName }),
+  );
   const res = await feishu.replyMarkdown(
     ctx.lark,
     thread.feishuRootMsgId,
@@ -230,7 +239,7 @@ export async function syncLinearCommentToFeishu(
         await feishu.replyFile(ctx.lark, thread.feishuRootMsgId, key, true);
       }
     } catch (err) {
-      log.warn({ err, asset: asset.name }, "同步 Linear 附件到飞书失败");
+      log.warn({ err, asset: asset.name }, "Failed to sync a Linear attachment to Feishu");
     }
   }
   return row;
@@ -251,24 +260,32 @@ export async function notifyStatusChange(
   const thread = await findByLinearIssue(ctx, opts.linearIssueId);
   if (!thread) return;
 
-  let emoji = "🔄";
-  let verb = `状态变更为 **${opts.status}**`;
-  if (/duplicate/i.test(opts.status)) {
-    emoji = "♻️";
-    verb = "被标记为 **重复**";
-  } else if (opts.statusType === "completed") {
-    emoji = "✅";
-    verb = "已 **完成**";
-  } else if (opts.statusType === "canceled") {
-    emoji = "❌";
-    verb = "已 **取消**";
-  }
-  await feishu.replyMarkdown(
-    ctx.lark,
-    thread.feishuRootMsgId,
-    `${emoji} Issue [${thread.linearIssueIdentifier}](${thread.linearIssueUrl}) ${verb}（${opts.actor}）`,
-    true,
-  );
+  await runLocalized(ctx, { chatId: thread.feishuChatId }, async () => {
+    let emoji = "🔄";
+    let verb = t("sync.statusChanged", { status: opts.status });
+    if (/duplicate/i.test(opts.status)) {
+      emoji = "♻️";
+      verb = t("sync.duplicate");
+    } else if (opts.statusType === "completed") {
+      emoji = "✅";
+      verb = t("sync.done");
+    } else if (opts.statusType === "canceled") {
+      emoji = "❌";
+      verb = t("sync.canceled");
+    }
+    await feishu.replyMarkdown(
+      ctx.lark,
+      thread.feishuRootMsgId,
+      t("sync.statusLine", {
+        emoji,
+        id: thread.linearIssueIdentifier,
+        url: thread.linearIssueUrl,
+        verb,
+        actor: opts.actor,
+      }),
+      true,
+    );
+  });
 }
 
 /**
@@ -306,18 +323,32 @@ export async function handleDuplicate(
         linearIssueUrl: original.url,
       })
       .where(eq(schema.syncThreads.id, dupThread.id));
-    await feishu.replyMarkdown(
-      ctx.lark,
-      dupThread.feishuRootMsgId,
-      `♻️ ${dupThread.linearIssueIdentifier} 被 ${opts.actor} 标记为 [${original.identifier}](${original.url}) 的重复。此话题已改为与 **${original.identifier}** 同步。`,
-      true,
+    await runLocalized(ctx, { chatId: dupThread.feishuChatId }, () =>
+      feishu.replyMarkdown(
+        ctx.lark,
+        dupThread.feishuRootMsgId,
+        t("sync.dup.moved", {
+          id: dupThread.linearIssueIdentifier,
+          actor: opts.actor,
+          original: original.identifier,
+          url: original.url,
+        }),
+        true,
+      ),
     );
   } else {
-    await feishu.replyMarkdown(
-      ctx.lark,
-      dupThread.feishuRootMsgId,
-      `♻️ ${dupThread.linearIssueIdentifier} 被 ${opts.actor} 标记为 [${original.identifier}](${original.url}) 的重复（原 Issue 已有同步线程，此话题保持原同步）。`,
-      true,
+    await runLocalized(ctx, { chatId: dupThread.feishuChatId }, () =>
+      feishu.replyMarkdown(
+        ctx.lark,
+        dupThread.feishuRootMsgId,
+        t("sync.dup.kept", {
+          id: dupThread.linearIssueIdentifier,
+          actor: opts.actor,
+          original: original.identifier,
+          url: original.url,
+        }),
+        true,
+      ),
     );
   }
 }

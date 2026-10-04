@@ -1,4 +1,5 @@
 import type { AppContext } from "../../app/context.js";
+import { t } from "../../i18n/index.js";
 import * as linearApi from "../../adapters/linear/api.js";
 import * as feishu from "../../adapters/feishu/client.js";
 import { buildCreateIssueForm, buildLinkIssueForm } from "../../cards/issue.js";
@@ -24,7 +25,7 @@ export async function buildCreateForm(ctx: AppContext, input: FormInput) {
   ]);
   const team =
     teams.find((t) => t.id === (input.teamId ?? defaults.teamId)) ?? teams[0];
-  if (!team) throw new Error("工作区里没有可用的团队");
+  if (!team) throw new Error(t("issue.noTeamInWorkspace"));
   const opts = await linearApi.getTeamFormOptions(linear, team.id);
   return buildCreateIssueForm({
     team: { id: team.id, name: team.name },
@@ -79,7 +80,7 @@ export async function deliverPrivately(
     });
     return "ephemeral";
   } catch (err) {
-    log.debug({ err }, "临时卡片不可用，回退私聊");
+    log.debug({ err }, "Ephemeral card unavailable; falling back to a direct message");
     await feishu.sendP2PCard(ctx.lark, opts.openId, opts.card);
     return "p2p";
   }

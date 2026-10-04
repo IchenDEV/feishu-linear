@@ -2,6 +2,7 @@ import "dotenv/config";
 import "./types.js";
 import Koa from "koa";
 import { loadConfig } from "./config.js";
+import { setDefaultLocale } from "./i18n/index.js";
 import { getDb, isPerRequestDb } from "./db/index.js";
 import { requestDbScope } from "./db/scope.js";
 import { createFeishuClient } from "./adapters/feishu/client.js";
@@ -21,6 +22,7 @@ import { logger } from "./logger.js";
 
 // 组装根：同一份代码既可在 VPS/Docker 长驻运行，也可作为 Vercel Function 部署
 const config = loadConfig();
+setDefaultLocale(config.DEFAULT_LOCALE);
 const db = getDb(config.DATABASE_URL);
 const linearFactory = createLinearClientFactory(config, db);
 
@@ -49,15 +51,15 @@ app.use(h5.allowedMethods());
 app.listen(config.PORT, config.HOST, () => {
   logger.info(
     { host: config.HOST, port: config.PORT, vercel: Boolean(process.env.VERCEL), dbMode: process.env.DB_MODE ?? "shared" },
-    "🚀 Feishu-Linear (Koa, webhook-only) 已启动",
+    "🚀 Feishu-Linear (Koa, webhook-only) started",
   );
   logger.info(`  GET  ${config.PUBLIC_URL}/health`);
-  logger.info(`  POST ${config.PUBLIC_URL}/webhook/feishu   ← 飞书事件/回调统一入口`);
+  logger.info(`  POST ${config.PUBLIC_URL}/webhook/feishu   ← Feishu events & callbacks`);
   logger.info(`  POST ${config.PUBLIC_URL}/webhook/linear   ← Linear Webhook`);
   if (config.LINEAR_AUTH_MODE === "oauth") {
     logger.info(`  GET  ${config.PUBLIC_URL}/oauth/linear/install`);
   }
-  logger.info(`  Linear 鉴权: ${config.LINEAR_AUTH_MODE}；管理 API: ${config.ADMIN_TOKEN ? "已启用" : "未启用"}`);
+  logger.info(`  Linear auth: ${config.LINEAR_AUTH_MODE}; admin API: ${config.ADMIN_TOKEN ? "enabled" : "disabled"}; default locale: ${config.DEFAULT_LOCALE}`);
 });
 
 // 长驻进程用内置定时器清理；Vercel 由 vercel.json 的 Cron 调用 /cron/cleanup，
@@ -66,14 +68,14 @@ if (!process.env.VERCEL && !isPerRequestDb()) {
   setInterval(
     () =>
       cleanupOldEvents(db).catch((err) =>
-        logger.error({ err }, "清理过期事件失败"),
+        logger.error({ err }, "Failed to clean up expired events"),
       ),
     6 * 60 * 60 * 1000,
   ).unref();
   setInterval(
     () =>
       pollViewSubscriptions(ctx).catch((err) =>
-        logger.error({ err }, "视图订阅轮询失败"),
+        logger.error({ err }, "View subscription polling failed"),
       ),
     10 * 60 * 1000,
   ).unref();

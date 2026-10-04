@@ -1,14 +1,30 @@
+import { currentLocale, t, type MessageKey } from "../../i18n/index.js";
+
 /**
  * 「消息快捷操作」的网页应用页面（单文件，无构建步骤）。
  * 流程：JSSDK 鉴权 → requestAccess 登录 → 读取被选中的消息 → 渲染创建 Issue 表单 → 提交。
  */
 export function renderMessageActionPage(appId: string): string {
+  const locale = currentLocale();
+  const T = Object.fromEntries(
+    ([
+      "connecting", "errorPrefix", "openInFeishu", "enterFromMenu", "reading", "none", "attachments",
+      "team", "titleLabel", "description", "project", "status", "priority", "template", "labels",
+      "sync", "create", "creating", "created", "synced", "openInLinear", "close",
+    ] as const).map((k) => [k, t(`h5.${k}` as MessageKey)]),
+  );
+  const priorities = [
+    ["1", t("priority.urgent.plain")],
+    ["2", t("priority.high.plain")],
+    ["3", t("priority.medium.plain")],
+    ["4", t("priority.low.plain")],
+  ];
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale === "en" ? "en" : "zh-CN"}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>转为 Linear Issue</title>
+<title>${t("h5.title")}</title>
 <style>
   :root { color-scheme: light dark; --b:#d0d5dd; --p:#3370ff; }
   * { box-sizing: border-box; }
@@ -32,11 +48,13 @@ export function renderMessageActionPage(appId: string): string {
 <script src="https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.48.js"></script>
 </head>
 <body>
-<h1>转为 Linear Issue</h1>
-<div id="app"><div class="msg">正在连接飞书…</div></div>
+<h1>${t("h5.title")}</h1>
+<div id="app"><div class="msg">${T.connecting}</div></div>
 <script>
 (function () {
   var APP_ID = ${JSON.stringify(appId)};
+  var T = ${JSON.stringify(T)};
+  var PRIORITIES = ${JSON.stringify(priorities)};
   var app = document.getElementById('app');
   var token = '', ctx = null;
 
@@ -49,9 +67,9 @@ export function renderMessageActionPage(appId: string): string {
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
   }
-  function fail(e) { show('出错了：' + esc((e && (e.errMsg || e.message)) || JSON.stringify(e)), 'err'); }
+  function fail(e) { show(T.errorPrefix + esc((e && (e.errMsg || e.message)) || JSON.stringify(e)), 'err'); }
 
-  if (!window.h5sdk) { show('请在飞书客户端内打开。', 'err'); return; }
+  if (!window.h5sdk) { show(T.openInFeishu, 'err'); return; }
 
   var url = location.href.split('#')[0];
   fetch('/h5/jssdk-sign?url=' + encodeURIComponent(url)).then(function (r) { return r.json(); }).then(function (s) {
@@ -64,7 +82,7 @@ export function renderMessageActionPage(appId: string): string {
     window.h5sdk.ready(function () {
       var lq = {};
       try { lq = JSON.parse(new URLSearchParams(location.search).get('bdp_launch_query') || '{}'); } catch (e) {}
-      if (!lq.__trigger_id__) { show('请从消息的「更多 → 转为 Linear Issue」进入。', 'err'); return; }
+      if (!lq.__trigger_id__) { show(T.enterFromMenu, 'err'); return; }
       tt.requestAccess({
         appID: APP_ID, scopeList: [],
         success: function (r) {
@@ -85,29 +103,29 @@ export function renderMessageActionPage(appId: string): string {
   }).catch(fail);
 
   function load(messages) {
-    show('正在读取消息…');
+    show(T.reading);
     api('/h5/api/prepare', { messages: messages }).then(function (d) { ctx = d; render(d); }).catch(fail);
   }
 
   var selLabels = {};
   function opts(list, sel) {
-    return '<option value="">（无）</option>' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === sel ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('');
+    return '<option value="">' + T.none + '</option>' + list.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === sel ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('');
   }
   function render(d) {
     var o = d.options;
     app.innerHTML =
       '<div class="quote">' + esc(d.preview) + '</div>' +
-      (d.attachmentCount ? '<div class="hint">包含 ' + d.attachmentCount + ' 个图片/文件，将一并上传到 Issue。</div>' : '') +
-      '<label>团队</label><select id="team">' + d.teams.map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === o.teamId ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</select>' +
-      '<label>标题</label><input type="text" id="title" value="' + esc(d.title) + '" />' +
-      '<label>描述</label><textarea id="desc">' + esc(d.description) + '</textarea>' +
-      '<div class="row"><div><label>项目</label><select id="project">' + opts(o.projects, d.defaults.projectId) + '</select></div>' +
-      '<div><label>状态</label><select id="state">' + opts(o.states) + '</select></div></div>' +
-      '<div class="row"><div><label>优先级</label><select id="prio"><option value="">（无）</option><option value="1">Urgent</option><option value="2">High</option><option value="3">Medium</option><option value="4">Low</option></select></div>' +
-      '<div><label>模板</label><select id="tpl">' + opts(o.templates, d.defaults.templateId) + '</select></div></div>' +
-      '<label>标签</label><div class="chips" id="labels">' + o.labels.map(function (l) { return '<span class="chip" data-id="' + esc(l.id) + '">' + esc(l.name) + '</span>'; }).join('') + '</div>' +
-      '<label><input type="checkbox" id="sync" checked /> 同步此话题（回复 ↔ Issue 评论）</label>' +
-      '<button id="go">创建 Issue</button><div id="out"></div>';
+      (d.attachmentCount ? '<div class="hint">' + T.attachments.replace('{n}', d.attachmentCount) + '</div>' : '') +
+      '<label>' + T.team + '</label><select id="team">' + d.teams.map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === o.teamId ? ' selected' : '') + '>' + esc(t.name) + '</option>'; }).join('') + '</select>' +
+      '<label>' + T.titleLabel + '</label><input type="text" id="title" value="' + esc(d.title) + '" />' +
+      '<label>' + T.description + '</label><textarea id="desc">' + esc(d.description) + '</textarea>' +
+      '<div class="row"><div><label>' + T.project + '</label><select id="project">' + opts(o.projects, d.defaults.projectId) + '</select></div>' +
+      '<div><label>' + T.status + '</label><select id="state">' + opts(o.states) + '</select></div></div>' +
+      '<div class="row"><div><label>' + T.priority + '</label><select id="prio"><option value="">' + T.none + '</option>' + PRIORITIES.map(function (p) { return '<option value="' + p[0] + '">' + esc(p[1]) + '</option>'; }).join('') + '</select></div>' +
+      '<div><label>' + T.template + '</label><select id="tpl">' + opts(o.templates, d.defaults.templateId) + '</select></div></div>' +
+      '<label>' + T.labels + '</label><div class="chips" id="labels">' + o.labels.map(function (l) { return '<span class="chip" data-id="' + esc(l.id) + '">' + esc(l.name) + '</span>'; }).join('') + '</div>' +
+      '<label><input type="checkbox" id="sync" checked /> ' + T.sync + '</label>' +
+      '<button id="go">' + T.create + '</button><div id="out"></div>';
     selLabels = {};
     document.getElementById('labels').onclick = function (e) {
       var id = e.target.getAttribute && e.target.getAttribute('data-id');
@@ -120,7 +138,7 @@ export function renderMessageActionPage(appId: string): string {
   }
 
   function submit() {
-    var btn = document.getElementById('go'); btn.disabled = true; btn.textContent = '创建中…';
+    var btn = document.getElementById('go'); btn.disabled = true; btn.textContent = T.creating;
     var v = function (id) { return document.getElementById(id).value || undefined; };
     api('/h5/api/create', {
       messageIds: ctx.messageIds, chatId: ctx.chatId,
@@ -130,10 +148,10 @@ export function renderMessageActionPage(appId: string): string {
       labelIds: Object.keys(selLabels).filter(function (k) { return selLabels[k]; }),
       sync: document.getElementById('sync').checked
     }).then(function (r) {
-      app.innerHTML = '<div class="msg">✅ 已创建 <b>' + esc(r.identifier) + '</b>' + (r.synced ? '（已同步话题）' : '') + '<br/>' + esc(r.title) + '</div>' +
-        '<button onclick="window.open(\\'' + esc(r.url) + '\\')">在 Linear 中打开</button>' +
-        '<button class="sec" onclick="tt.closeWindow()">关闭</button>';
-    }).catch(function (e) { btn.disabled = false; btn.textContent = '创建 Issue'; document.getElementById('out').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
+      app.innerHTML = '<div class="msg">' + T.created + ' <b>' + esc(r.identifier) + '</b>' + (r.synced ? T.synced : '') + '<br/>' + esc(r.title) + '</div>' +
+        '<button onclick="window.open(\\'' + esc(r.url) + '\\')">' + T.openInLinear + '</button>' +
+        '<button class="sec" onclick="tt.closeWindow()">' + T.close + '</button>';
+    }).catch(function (e) { btn.disabled = false; btn.textContent = T.create; document.getElementById('out').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
   }
 })();
 </script>

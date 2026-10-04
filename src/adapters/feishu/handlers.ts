@@ -12,7 +12,7 @@ import {
 } from "../../domain/sync/threads.js";
 import { handleAgentMessage } from "../../domain/agent/agent.js";
 import { issueCard } from "../../domain/issues/service.js";
-import { parseCommand, runCommand, HELP_TEXT } from "../../domain/commands/linear.js";
+import { parseCommand, runCommand, helpText } from "../../domain/commands/linear.js";
 import { parseMessage } from "../../domain/messages/content.js";
 import { getFeishuUserName } from "../../domain/users/mapping.js";
 import { unfurlLinearUrl } from "../../domain/unfurl.js";
@@ -23,6 +23,8 @@ import { buildPersonalPrefsCard } from "../../cards/settings.js";
 import * as linearApi from "../linear/api.js";
 import * as feishu from "./client.js";
 import { handleCardAction } from "./card-actions.js";
+import { withLocale } from "../../i18n/index.js";
+import { resolveLocale } from "../../i18n/resolve.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("feishu-handlers");
@@ -45,12 +47,11 @@ function normalizeMentions(
 }
 
 export function createFeishuHandlers(ctx: AppContext) {
-  return {
-    async onMessageReceive(data: Record<string, unknown>) {
+  const handleMessage = async (data: Record<string, unknown>) => {
       const message = (data.message ?? data) as Record<string, unknown>;
       const sender = (data.sender ?? {}) as Record<string, unknown>;
       if (!message?.message_id) {
-        log.debug({ data }, "消息事件结构异常");
+        log.debug({ data }, "Malformed message event");
         return;
       }
 
@@ -135,6 +136,21 @@ export function createFeishuHandlers(ctx: AppContext) {
       if (messageType === "text" || messageType === "post") {
         await expandReferences(ctx, { chatId, messageId, threadId, text: plain.text });
       }
+  };
+
+  return {
+    /** 按发送者 / 会话解析界面语言，其后的处理都在该语言下进行 */
+    async onMessageReceive(data: Record<string, unknown>) {
+      const message = (data.message ?? data) as Record<string, unknown>;
+      const sender = (data.sender ?? {}) as Record<string, unknown>;
+      const openId = (sender.sender_id as Record<string, unknown> | undefined)?.open_id as
+        | string
+        | undefined;
+      const locale = await resolveLocale(ctx, {
+        openId,
+        chatId: message.chat_id as string | undefined,
+      });
+      return withLocale(locale, () => handleMessage(data));
     },
 
     async onCardAction(data: Record<string, unknown>) {
@@ -147,8 +163,12 @@ export function createFeishuHandlers(ctx: AppContext) {
         | string
         | undefined;
       if (!url) return {};
-      const unfurl = await unfurlLinearUrl(ctx, url, { compact: true });
-      return unfurl ? toPreview(unfurl.title, unfurl.card) : {};
+      const operator = data.operator as Record<string, any> | undefined;
+      const locale = await resolveLocale(ctx, { openId: operator?.open_id });
+      return withLocale(locale, async () => {
+        const unfurl = await unfurlLinearUrl(ctx, url, { compact: true });
+        return unfurl ? toPreview(unfurl.title, unfurl.card) : {};
+      });
     },
 
     async onBotMenu(data: Record<string, unknown>) {
@@ -158,6 +178,8 @@ export function createFeishuHandlers(ctx: AppContext) {
         operator?.operator_id?.open_id ?? (typeof operator?.operator_id === "string" ? operator.operator_id : undefined);
       if (!openId) return;
 
+      const locale = await resolveLocale(ctx, { openId });
+      await withLocale(locale, async () => {
       try {
         switch (eventKey) {
           case "create_issue": {
@@ -174,11 +196,12 @@ export function createFeishuHandlers(ctx: AppContext) {
             break;
           case "help":
           default:
-            await feishu.sendText(ctx.lark, openId, HELP_TEXT);
+            await feishu.sendText(ctx.lark, openId, helpText());
         }
       } catch (err) {
-        log.error({ err, eventKey }, "菜单事件处理失败");
+        log.error({ err, eventKey }, "Bot menu event failed");
       }
+      });
     },
   };
 }
@@ -206,7 +229,7 @@ async function expandReferences(
         Boolean(opts.threadId),
       );
     } catch (err) {
-      log.error({ err, id }, "Issue ID 展开失败");
+      log.error({ err, id }, "Issue key unfurl failed");
     }
   }
 
@@ -220,7 +243,7 @@ async function expandReferences(
       if (!(await acquireIssueExpansion(ctx.db, opts.chatId, url, COOLDOWN_MS))) continue;
       await feishu.replyCard(ctx.lark, opts.messageId, unfurl.card, Boolean(opts.threadId));
     } catch (err) {
-      log.error({ err, url }, "链接展开失败");
+      log.error({ err, url }, "Link unfurl failed");
     }
   }
 }

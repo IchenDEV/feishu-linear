@@ -1,5 +1,5 @@
-// 示例配置：复制为 wrangler.jsonc 后按自己的环境修改（wrangler.jsonc 已被 .gitignore 忽略，
-// 不要把自己的域名 / 账号信息提交到仓库）。
+// Example Workers config. Copy to wrangler.jsonc and adapt (wrangler.jsonc is gitignored —
+// never commit your own domain / account details).
 //   cp wrangler.example.jsonc wrangler.jsonc
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -9,29 +9,31 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // 飞书 SDK 在加载时用 __dirname 读自身 package.json 取版本号；Workers 里没有，置空即可
+  // The Feishu SDK reads its own package.json via __dirname at load time; Workers has none.
   "define": { "__dirname": "\"/\"" },
 
-  // 自定义域名（域名需托管在同一 Cloudflare 账号）。*.workers.dev 在中国大陆常无法解析，
-  // 飞书回调建议使用自己的域名
+  // Custom domain (the zone must live in the same Cloudflare account). *.workers.dev is often
+  // unreachable from mainland China, so use your own domain for Feishu callbacks.
   // "routes": [{ "pattern": "feishu-linear.example.com", "custom_domain": true }],
 
-  // 让 Worker 跑在离数据库最近的机房（按数据库所在云区域填写，如 Neon 的 AWS 区域）
+  // Run the Worker close to the database (use the cloud region of your Postgres, e.g. Neon's AWS region).
   // "placement": { "region": "aws:us-east-1" },
 
-  // 数据库：默认 Worker 直连 Postgres，连接串放 secret：`wrangler secret put DATABASE_URL`。
-  // 想降低每请求的建连延迟可启用 Hyperdrive（代码会优先使用 HYPERDRIVE 绑定）：
-  //   wrangler hyperdrive create feishu-linear --connection-string="<直连地址>"
+  // Database: by default the Worker connects directly; put the connection string in a secret:
+  //   wrangler secret put DATABASE_URL
+  // To cut per-request connection latency, enable Hyperdrive (the code prefers the HYPERDRIVE binding):
+  //   wrangler hyperdrive create feishu-linear --connection-string="<direct url>"
   // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<id>" }],
 
-  // 每天 03:00 UTC 清理去重记录 → scheduled()
-  // 每日清理 + 每 10 分钟轮询视图订阅
+  // Daily cleanup (03:00 UTC) + view-subscription polling every 10 minutes → scheduled()
   "triggers": { "crons": ["0 3 * * *", "*/10 * * * *"] },
 
-  // 非敏感配置；密钥一律用 `wrangler secret put <NAME>`（或 `wrangler deploy --secrets-file`）
+  // Non-secret config. Secrets: `wrangler secret put <NAME>` (or `wrangler deploy --secrets-file`).
   "vars": {
     "PUBLIC_URL": "https://feishu-linear.example.com",
     "LINEAR_AUTH_MODE": "api_key",
+    "DEFAULT_LOCALE": "zh-CN",
+    "FEISHU_LINK_PREVIEW": "false",
     "LOG_LEVEL": "info"
   }
 }

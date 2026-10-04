@@ -66,7 +66,7 @@ export const syncThreads = pgTable(
   (t) => [index("idx_sync_threads_linear").on(t.linearIssueId)],
 );
 
-// ── 同步评论：飞书消息 ↔ Linear Comment ──
+// ── 同步评论：Feishu message ↔ Linear Comment ──
 export const syncComments = pgTable(
   "sync_comments",
   {
@@ -176,6 +176,8 @@ export const chatSettings = pgTable("chat_settings", {
   defaultTeamId: text("default_team_id"),
   defaultProjectId: text("default_project_id"),
   defaultTemplateId: text("default_template_id"),
+  /** 本群界面语言：zh-CN | en；为空时跟随工作区默认 */
+  locale: text("locale"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -189,6 +191,8 @@ export const userNotificationPrefs = pgTable("user_notification_prefs", {
   onMentioned: boolean("on_mentioned").notNull().default(true),
   onComment: boolean("on_comment").notNull().default(true),
   onStatusChange: boolean("on_status_change").notNull().default(true),
+  /** 个人界面语言：zh-CN | en；为空时跟随群 / 工作区默认 */
+  locale: text("locale"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

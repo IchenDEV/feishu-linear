@@ -1,7 +1,14 @@
 {
   "name": "feishu-linear",
-  "version": "0.3.0",
-  "description": "飞书 × Linear 双向连接器 — 对标 Slack-Linear 集成的飞书版",
+  "version": "0.4.0",
+  "description": "Feishu/Lark × Linear connector — the Linear for Slack experience, built for Feishu. 飞书 × Linear 连接器。",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IchenDEV/feishu-linear.git"
+  },
+  "homepage": "https://github.com/IchenDEV/feishu-linear#readme",
+  "bugs": "https://github.com/IchenDEV/feishu-linear/issues",
+  "keywords": ["feishu", "lark", "linear", "integration", "cloudflare-workers", "agent", "mcp"],
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -11,6 +18,7 @@
     "build": "tsup src/index.ts src/db/migrate.ts --format esm",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/migrate.ts",
+    "setup:check": "tsx src/cli/doctor.ts",
     "db:studio": "drizzle-kit studio",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"src/**/*.test.ts\"",

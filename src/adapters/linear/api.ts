@@ -23,8 +23,8 @@ export async function createIssue(
 ) {
   const result = await client.createIssue(input);
   const issue = await result.issue;
-  if (!issue) throw new Error("Issue 创建失败");
-  log.info({ id: issue.id, identifier: issue.identifier }, "Issue 已创建");
+  if (!issue) throw new Error("Failed to create the issue");
+  log.info({ id: issue.id, identifier: issue.identifier }, "Issue created");
   return issue;
 }
 
@@ -49,7 +49,7 @@ export async function getIssue(client: LinearClient, idOrIdentifier: string) {
   try {
     return await client.issue(idOrIdentifier);
   } catch (err) {
-    log.debug({ err, idOrIdentifier }, "未找到 Issue");
+    log.debug({ err, idOrIdentifier }, "Issue not found");
     return null;
   }
 }
@@ -122,8 +122,8 @@ export async function createComment(
 ) {
   const result = await client.createComment(input);
   const comment = await result.comment;
-  if (!comment) throw new Error("评论创建失败");
-  log.info({ id: comment.id, issueId: input.issueId }, "评论已创建");
+  if (!comment) throw new Error("Failed to create the comment");
+  log.info({ id: comment.id, issueId: input.issueId }, "Comment created");
   return comment;
 }
 
@@ -134,7 +134,7 @@ export async function linkUrlAttachment(
   title?: string,
 ) {
   return client.attachmentLinkURL(issueId, url, {
-    title: title ?? "飞书消息",
+    title: title ?? "Feishu message",
   });
 }
 
@@ -152,7 +152,7 @@ export async function uploadFile(
     file.data.byteLength,
   );
   const upload = payload.uploadFile;
-  if (!payload.success || !upload) throw new Error("Linear 文件上传初始化失败");
+  if (!payload.success || !upload) throw new Error("Failed to initialize the Linear file upload");
 
   const headers: Record<string, string> = {
     "Content-Type": file.contentType,
@@ -165,7 +165,7 @@ export async function uploadFile(
     headers,
     body: file.data as unknown as BodyInit,
   });
-  if (!res.ok) throw new Error(`Linear 文件上传失败: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Linear file upload failed: HTTP ${res.status}`);
   return upload.assetUrl;
 }
 
@@ -281,7 +281,7 @@ export async function createDocument(
 ) {
   const res = await client.createDocument(input);
   const doc = await res.document;
-  if (!doc) throw new Error("文档创建失败");
+  if (!doc) throw new Error("Failed to create the document");
   return doc;
 }
 

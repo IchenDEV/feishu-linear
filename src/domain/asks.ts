@@ -8,6 +8,7 @@ import { getFeishuUserName } from "./users/mapping.js";
 import { deriveTitle } from "./messages/source.js";
 import { uploadAttachmentsToLinear, type Attachment } from "./messages/content.js";
 import { createChildLogger } from "../logger.js";
+import { t } from "../i18n/index.js";
 
 const log = createChildLogger("asks");
 
@@ -31,12 +32,12 @@ export async function submitAsk(
     await feishu.replyText(
       ctx.lark,
       opts.messageId,
-      "本群还没有启用 Asks。群主 / 管理员可发送 /linear settings 启用。",
+      t("asks.notEnabled"),
     );
     return null;
   }
   if (!opts.text.trim() && !opts.attachments?.length) {
-    await feishu.replyText(ctx.lark, opts.messageId, "用法：/ask 你的需求或问题（可附图片 / 文件）");
+    await feishu.replyText(ctx.lark, opts.messageId, t("asks.usage"));
     return null;
   }
 
@@ -47,9 +48,9 @@ export async function submitAsk(
 
   const issue = await linearApi.createIssue(linear, {
     teamId: asks.teamId,
-    title: deriveTitle(opts.text, `${name} 的请求`),
+    title: deriveTitle(opts.text, t("asks.titleFallback", { name })),
     description:
-      [`**${name}** 通过飞书提交的请求：`, opts.text, ...att].filter(Boolean).join("\n\n") +
+      [t("asks.body", { name }), opts.text, ...att].filter(Boolean).join("\n\n") +
       who.footer,
     templateId: asks.templateId,
     createAsUser: who.createAsUser,
@@ -61,7 +62,7 @@ export async function submitAsk(
     messageId: opts.messageId,
     threadId: opts.threadId,
   });
-  log.info({ issue: issue.identifier, synced: Boolean(synced) }, "Asks 已创建");
+  log.info({ issue: issue.identifier, synced: Boolean(synced) }, "Ask created");
 
   await feishu.replyCard(
     ctx.lark,

@@ -3,6 +3,7 @@ import type { AppContext } from "../../app/context.js";
 import { schema } from "../../db/index.js";
 import * as feishu from "../../adapters/feishu/client.js";
 import * as linearApi from "../../adapters/linear/api.js";
+import { t } from "../../i18n/index.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("user-mapping");
@@ -37,7 +38,7 @@ export async function bindByEmail(
   const linear = await ctx.getLinear();
   const user = await linearApi.findUserByEmail(linear, opts.linearEmail);
   if (!user) {
-    throw new Error(`未找到 Linear 用户: ${opts.linearEmail}`);
+    throw new Error(t("bind.userNotFound", { email: opts.linearEmail }));
   }
 
   await ctx.db
@@ -64,10 +65,41 @@ export async function bindByEmail(
 
   log.info(
     { feishuOpenId: opts.feishuOpenId, linear: user.name },
-    "用户已绑定",
+    "User linked",
   );
 
   return { linearUserId: user.id, linearName: user.name, linearEmail: user.email };
+}
+
+/** 读取飞书通讯录里该用户的邮箱（个人邮箱与企业邮箱） */
+async function getFeishuEmails(ctx: AppContext, openId: string) {
+  const res = await feishu.getUser(ctx.lark, openId);
+  const user = (res.data as Record<string, unknown>)?.user as Record<string, unknown> | undefined;
+  const emails = [user?.email, user?.enterprise_email]
+    .filter((e): e is string => typeof e === "string" && e.length > 0)
+    .map((e) => e.trim().toLowerCase());
+  return {
+    emails,
+    name: user?.name as string | undefined,
+    unionId: user?.union_id as string | undefined,
+  };
+}
+
+/**
+ * 用户自助绑定：只允许绑定与自己飞书账号邮箱一致的 Linear 账号，防止冒用他人身份。
+ * （管理员可通过 /api/bind 为他人绑定。）
+ */
+export async function bindVerified(ctx: AppContext, openId: string, linearEmail: string) {
+  const email = linearEmail.trim().toLowerCase();
+  const f = await getFeishuEmails(ctx, openId);
+  if (!f.emails.length) throw new Error(t("bind.noFeishuEmail"));
+  if (!f.emails.includes(email)) throw new Error(t("bind.emailMismatch"));
+  return bindByEmail(ctx, {
+    feishuOpenId: openId,
+    linearEmail: email,
+    feishuName: f.name,
+    feishuUnionId: f.unionId,
+  });
 }
 
 /** 尝试用飞书用户邮箱自动匹配 Linear 用户 */
@@ -90,7 +122,7 @@ export async function autoBindFromFeishuUser(
     const unionId = (user?.union_id as string | undefined) ?? undefined;
 
     if (!email) {
-      log.debug({ openId }, "飞书用户无邮箱，无法自动绑定");
+      log.debug({ openId }, "Feishu user has no email; cannot auto-link");
       return null;
     }
 
@@ -102,7 +134,7 @@ export async function autoBindFromFeishuUser(
     });
     return bound.linearUserId;
   } catch (err) {
-    log.warn({ err, openId }, "自动绑定失败");
+    log.warn({ err, openId }, "Auto-link failed");
     return null;
   }
 }
@@ -110,9 +142,7 @@ export async function autoBindFromFeishuUser(
 /** 未绑定 Linear 账号（建 Issue / 评论等需要 Linear 账号，对标 Slack 集成的限制） */
 export class NotBoundError extends Error {
   constructor() {
-    super(
-      "你还没有绑定 Linear 账号。请私聊机器人发送：bind 你的Linear邮箱，例如 bind you@company.com",
-    );
+    super(t("bind.notBound"));
     this.name = "NotBoundError";
   }
 }
@@ -176,7 +206,7 @@ const nameCache = new Map<string, { name: string; at: number }>();
 export async function getFeishuUserName(
   ctx: AppContext,
   openId: string,
-  fallback = "飞书用户",
+  fallback = t("bind.unknownUser"),
 ): Promise<string> {
   const hit = nameCache.get(openId);
   if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.name;

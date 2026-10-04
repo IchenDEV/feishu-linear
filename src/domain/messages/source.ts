@@ -1,4 +1,5 @@
 import type { AppContext } from "../../app/context.js";
+import { t } from "../../i18n/index.js";
 import * as feishu from "../../adapters/feishu/client.js";
 import { parseMessage, type ParsedMessage } from "./content.js";
 import { getFeishuUserName } from "../users/mapping.js";
@@ -12,7 +13,7 @@ export interface SourceMessage extends ParsedMessage {
   msgType: string;
 }
 
-/** 读取一条飞书消息并解析成 Markdown + 附件（含 @ 提及名） */
+/** 读取一条Feishu message并解析成 Markdown + 附件（含 @ 提及名） */
 export async function fetchSourceMessage(
   ctx: AppContext,
   messageId: string,
@@ -42,7 +43,7 @@ export async function fetchSourceMessage(
 }
 
 /** 取标题：第一行非空文本，最多 80 字 */
-export function deriveTitle(text: string, fallback = "来自飞书的消息"): string {
+export function deriveTitle(text: string, fallback = t("content.titleFallback")): string {
   const line = text
     .split("\n")
     .map((s) => s.trim())

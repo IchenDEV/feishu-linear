@@ -6,19 +6,20 @@ import { parseMessage, type Attachment } from "../messages/content.js";
 import { getFeishuUserName, resolveLinearIdentity } from "../users/mapping.js";
 import { buildGuidanceText, resolveChatDefaults } from "../settings/store.js";
 import { linearTools, type ToolEnv } from "./tools.js";
+import { currentLocale, t } from "../../i18n/index.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("agent");
 
-const SYSTEM_PROMPT = `你是 Linear 助手，运行在飞书群聊 / 私聊中，替用户直接操作 Linear。
-能力：创建、查询、更新 Issue；评论；建立 Issue 关系；订阅；查看团队/项目/Initiative/成员/状态/标签/模板；创建文档；总结当前话题或群聊并据此建 Issue。
-规则：
-- 回复用简洁中文，可使用 Markdown；Issue 用 编号 + 标题 + 链接 的形式呈现。
-- 「对话上下文」是此刻话题/群里最近的消息，用户说"这个""上面的"时指向它；据此提炼标题与描述，不要照搬整段聊天。
-- 创建 Issue 时：团队/项目未指明则使用本群默认值；信息明显不足（没有任何可作标题的内容）才追问。
-- 用户明确要求带上图片/文件时，create_issue 设 attachContextFiles=true；要求同步当前话题时设 syncThread=true。
-- 写操作失败（例如用户未绑定 Linear 账号）要把原因告诉用户，不要假装成功。
-- 不确定名称时先用 list_* 工具确认，不要编造团队、项目、状态名。`;
+const SYSTEM_PROMPT = `You are a Linear assistant running inside Feishu/Lark group chats and direct messages. You operate Linear on behalf of the user.
+Capabilities: create, search and update issues; comment; relate issues; subscribe; browse teams, projects, initiatives, members, workflow states, labels and templates; create documents; summarize the current thread or channel and turn it into issues.
+Rules:
+- Reply concisely in the language the user wrote in (fall back to the "Preferred language" below). Markdown is allowed. Present issues as: key + title + link.
+- "Conversation context" contains the most recent messages of the current thread/channel. When the user says "this" or "the above", it refers to that context. Distill a title and description from it instead of pasting the whole chat.
+- When creating an issue: if team/project are not specified, use the channel defaults; only ask a follow-up when there is nothing at all that could serve as a title.
+- When the user explicitly asks to include images/files, set attachContextFiles=true on create_issue; when they ask to sync the current thread, set syncThread=true.
+- If a write fails (for example the user has not linked a Linear account), tell the user why. Never pretend it succeeded.
+- When unsure about a name, confirm with the list_* tools first. Never invent teams, projects or workflow states.`;
 
 const MAX_ITER = 8;
 // Workers 的 waitUntil 响应后最多再给 30 秒，留出收尾时间
@@ -53,7 +54,7 @@ async function gatherContext(ctx: AppContext, input: AgentInput): Promise<Gather
         : { containerType: "chat", containerId: input.chatId, max: 15 },
     );
   } catch (err) {
-    log.warn({ err }, "读取对话上下文失败（需要 im:message.group_msg 权限）");
+    log.warn({ err }, "Failed to read the conversation context (requires the im:message.group_msg scope)");
   }
   msgs = msgs.filter((m) => !m.deleted && m.messageId !== input.messageId);
 
@@ -68,11 +69,11 @@ async function gatherContext(ctx: AppContext, input: AgentInput): Promise<Gather
     const parsed = parseMessage(m.messageId, m.msgType, m.content);
     attachments.push(...parsed.attachments);
     const who =
-      m.senderType === "user" ? (names.get(m.senderId ?? "") ?? "用户") : "助手";
+      m.senderType === "user" ? (names.get(m.senderId ?? "") ?? t("agent.user")) : t("agent.assistant");
     const files = parsed.attachments.length
-      ? ` [附件: ${parsed.attachments.map((a) => a.name).join("、")}]`
+      ? ` [attachments: ${parsed.attachments.map((a) => a.name).join(", ")}]`
       : "";
-    const text = parsed.text || (parsed.attachments.length ? "" : "[空]");
+    const text = parsed.text || (parsed.attachments.length ? "" : "[empty]");
     lines.push(`${who}: ${text}${files}`.slice(0, 1200));
   }
   return { transcript: lines.join("\n"), attachments: attachments.slice(-10) };
@@ -121,10 +122,10 @@ function openaiTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
       type: "function" as const,
       function: {
         name: "read_more_chat_history",
-        description: "读取当前群聊/话题更早的消息（默认上下文不够时使用）",
+        description: "Read earlier messages of the current chat/thread (use when the default context is not enough)",
         parameters: {
           type: "object",
-          properties: { limit: { type: "number", description: "最多 50" } },
+          properties: { limit: { type: "number", description: "Maximum 50" } },
         },
       },
     },
@@ -140,7 +141,7 @@ export async function handleAgentMessage(ctx: AppContext, input: AgentInput) {
     await feishu.replyText(
       ctx.lark,
       input.messageId,
-      "⚠️ AI 智能体未配置 OPENAI_API_KEY（管理员需在部署环境里设置）。",
+      t("agent.notConfigured"),
     );
     return;
   }
@@ -168,7 +169,7 @@ export async function handleAgentMessage(ctx: AppContext, input: AgentInput) {
       linearApi.getTeams(linear),
       defaults.projectId ? linearApi.getProjects(linear, 100) : Promise.resolve([]),
     ]);
-    const defaultTeam = teams.find((t) => t.id === defaults.teamId)?.name;
+    const defaultTeam = teams.find((tm) => tm.id === defaults.teamId)?.name;
     const defaultProject = projects.find((p) => p.id === defaults.projectId)?.name;
     let chatName = "";
     try {
@@ -180,12 +181,13 @@ export async function handleAgentMessage(ctx: AppContext, input: AgentInput) {
     const allAttachments = [...(input.attachments ?? []), ...gathered.attachments];
     const system = [
       SYSTEM_PROMPT,
-      `## 当前环境
-- 日期：${new Date().toISOString().slice(0, 10)}
-- 会话：${input.chatType === "p2p" ? "私聊" : `群「${chatName}」`}${input.threadId ? "（话题内）" : ""}
-- 本群默认团队：${defaultTeam ?? "未设置"}；默认项目：${defaultProject ?? "未设置（可按群名推断）"}
-- 可用团队：${teams.map((t) => `${t.name}(${t.key})`).join("、")}
-- 发起人：${input.senderName}，Linear 账号：${identity ? `${identity.linearName}（已绑定）` : "未绑定（写操作会失败，提示其私聊机器人 bind 邮箱）"}`,
+      `## Environment
+- Date: ${new Date().toISOString().slice(0, 10)}
+- Preferred language: ${currentLocale() === "en" ? "English" : "Simplified Chinese"}
+- Conversation: ${input.chatType === "p2p" ? "direct message" : `channel "${chatName}"`}${input.threadId ? " (inside a thread)" : ""}
+- Channel default team: ${defaultTeam ?? "not set"}; default project: ${defaultProject ?? "not set (may be inferred from the channel name)"}
+- Available teams: ${teams.map((tm) => `${tm.name}(${tm.key})`).join(", ")}
+- Requester: ${input.senderName}; Linear account: ${identity ? `${identity.linearName} (linked)` : "not linked (write operations will fail; tell them to run /linear bind <email> in a direct message)"}`,
       guidance && `## Guidance\n${guidance}`,
     ]
       .filter(Boolean)
@@ -193,9 +195,9 @@ export async function handleAgentMessage(ctx: AppContext, input: AgentInput) {
 
     const images = await loadImages(ctx, allAttachments.filter((a) => a.messageId === input.messageId));
     const userText = [
-      gathered.transcript && `## 对话上下文（旧→新）\n${gathered.transcript}`,
-      `## 用户请求（${input.senderName}）\n${input.messageText || "（无文字，见附件）"}${
-        allAttachments.length ? `\n（本次对话中有 ${allAttachments.length} 个图片/文件附件）` : ""
+      gathered.transcript && `## Conversation context (oldest → newest)\n${gathered.transcript}`,
+      `## User request (${input.senderName})\n${input.messageText || "(no text; see attachments)"}${
+        allAttachments.length ? `\n(${allAttachments.length} image/file attachment(s) in this conversation)` : ""
       }`,
     ]
       .filter(Boolean)
@@ -265,7 +267,7 @@ export async function handleAgentMessage(ctx: AppContext, input: AgentInput) {
           const args = JSON.parse(tc.function.arguments || "{}");
           result = await runTool(env, tc.function.name, args);
         } catch (err) {
-          result = `错误: ${err instanceof Error ? err.message : String(err)}`;
+          result = `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
         messages.push({ role: "tool", tool_call_id: tc.id, content: result.slice(0, 12000) });
       }
@@ -273,11 +275,11 @@ export async function handleAgentMessage(ctx: AppContext, input: AgentInput) {
     }
 
     const text = response.choices[0]?.message?.content?.trim();
-    await reply(text || "已处理。");
+    await reply(text || t("agent.done"));
   } catch (err) {
-    log.error({ err }, "Agent 处理失败");
+    log.error({ err }, "Agent run failed");
     const timeout = err instanceof Error && (err.message === "__deadline__" || err.name === "TimeoutError");
-    await reply(timeout ? "⏱ 处理超时了，请把需求拆小一点再试。" : "❌ 处理失败，请稍后重试。").catch(() => {});
+    await reply(timeout ? t("agent.timeout") : t("agent.failed")).catch(() => {});
   } finally {
     if (reactionId) {
       await feishu.removeReaction(ctx.lark, input.messageId, reactionId).catch(() => {});
@@ -300,8 +302,8 @@ async function runTool(env: ToolEnv, name: string, args: Record<string, unknown>
       .join("\n")
       .slice(0, 10000);
   }
-  const tool = linearTools.find((t) => t.name === name);
-  if (!tool) return `未知工具: ${name}`;
+  const tool = linearTools.find((tl) => tl.name === name);
+  if (!tool) return `Unknown tool: ${name}`;
   const out = await tool.run(env, args);
   return typeof out === "string" ? out : JSON.stringify(out);
 }

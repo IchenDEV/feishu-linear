@@ -2,6 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import Router from "@koa/router";
 import type { Context, Next } from "koa";
 import type { AppContext } from "../../app/context.js";
+import { normalizeLocale, t, withLocale } from "../../i18n/index.js";
+import { resolveLocale } from "../../i18n/resolve.js";
 import * as linearApi from "../../adapters/linear/api.js";
 import { renderMessageActionPage } from "./page.js";
 import { signSession, verifySession } from "./session.js";
@@ -30,7 +32,7 @@ async function getJsapiTicket(ctx: AppContext): Promise<string> {
     data: {},
   })) as { code?: number; data?: { ticket?: string; expire_in?: number } };
   const ticket = res?.data?.ticket;
-  if (!ticket) throw new Error(`获取 jsapi_ticket 失败 code=${res?.code}`);
+  if (!ticket) throw new Error(`Failed to get jsapi_ticket (code=${res?.code})`);
   ticketCache = { ticket, exp: Date.now() + ((res.data?.expire_in ?? 7200) - 300) * 1000 };
   return ticket;
 }
@@ -48,12 +50,12 @@ async function openIdFromCode(ctx: AppContext, code: string) {
     }),
   });
   const t = (await tokenRes.json()) as { access_token?: string; code?: number; error_description?: string };
-  if (!t.access_token) throw new Error(`换取用户身份失败：${t.error_description ?? t.code}`);
+  if (!t.access_token) throw new Error(`Failed to exchange the code for a user identity: ${t.error_description ?? t.code}`);
   const infoRes = await fetch(`${OPEN}/open-apis/authen/v1/user_info`, {
     headers: { authorization: `Bearer ${t.access_token}` },
   });
   const info = (await infoRes.json()) as { data?: { open_id?: string; name?: string } };
-  if (!info.data?.open_id) throw new Error("读取用户信息失败");
+  if (!info.data?.open_id) throw new Error("Failed to read user info");
   return { openId: info.data.open_id, name: info.data.name };
 }
 
@@ -70,12 +72,23 @@ export function createH5Router(ctx: AppContext) {
     const openId = token ? verifySession(secret, token) : null;
     if (!openId) {
       c.status = 401;
-      c.body = { error: "登录已过期，请重新打开" };
+      c.body = { error: t("h5.error.expired") };
       return;
     }
     (c.state as H5State).openId = openId;
     await next();
   };
+
+  // 每个请求在其语言下处理：已登录用户用个人设置，否则按浏览器 Accept-Language，最后是工作区默认
+  router.use(async (c, next) => {
+    const token = (c.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const openId = token ? verifySession(secret, token) : null;
+    const fromHeader = normalizeLocale((c.get("accept-language") ?? "").split(",")[0]);
+    const locale = openId
+      ? await resolveLocale(ctx, { openId })
+      : (fromHeader ?? (await resolveLocale(ctx, {})));
+    return withLocale(locale, () => next());
+  });
 
   router.get("/message-action", (c) => {
     c.type = "html";
@@ -88,7 +101,7 @@ export function createH5Router(ctx: AppContext) {
     // 只给本站页面签名
     if (!url.startsWith(ctx.config.PUBLIC_URL)) {
       c.status = 400;
-      c.body = { error: "url 不合法" };
+      c.body = { error: t("h5.error.badUrl") };
       return;
     }
     const ticket = await getJsapiTicket(ctx);
@@ -104,14 +117,14 @@ export function createH5Router(ctx: AppContext) {
     const { code } = (c.request.body ?? {}) as { code?: string };
     if (!code) {
       c.status = 400;
-      c.body = { error: "缺少 code" };
+      c.body = { error: t("h5.error.noCode") };
       return;
     }
     try {
       const { openId, name } = await openIdFromCode(ctx, code);
       c.body = { token: signSession(secret, openId), name };
     } catch (err) {
-      log.warn({ err }, "H5 登录失败");
+      log.warn({ err }, "H5 sign-in failed");
       c.status = 401;
       c.body = { error: err instanceof Error ? err.message : String(err) };
     }
@@ -125,7 +138,7 @@ export function createH5Router(ctx: AppContext) {
       .slice(0, 20);
     if (!picked.length) {
       c.status = 400;
-      c.body = { error: "没有读取到消息" };
+      c.body = { error: t("h5.error.noMessages") };
       return;
     }
     if (!(await resolveLinearIdentity(ctx, openId))) {
@@ -156,7 +169,7 @@ export function createH5Router(ctx: AppContext) {
     c.body = {
       chatId,
       messageIds: picked.map((m) => m.openMessageId),
-      title: deriveTitle(parsed[0]?.text ?? "", "来自飞书的消息"),
+      title: deriveTitle(parsed[0]?.text ?? "", t("content.titleFallback")),
       description,
       preview: description.slice(0, 600),
       attachmentCount: attachments,
@@ -178,7 +191,7 @@ export function createH5Router(ctx: AppContext) {
     const ids: string[] = Array.isArray(b.messageIds) ? b.messageIds.slice(0, 20) : [];
     if (!b.title || !ids.length || !b.chatId) {
       c.status = 400;
-      c.body = { error: "缺少标题或消息" };
+      c.body = { error: t("h5.error.missingFields") };
       return;
     }
     try {
@@ -214,7 +227,7 @@ export function createH5Router(ctx: AppContext) {
     } catch (err) {
       c.status = err instanceof NotBoundError ? 403 : 500;
       c.body = { error: err instanceof Error ? err.message : String(err) };
-      if (!(err instanceof NotBoundError)) log.error({ err }, "H5 创建 Issue 失败");
+      if (!(err instanceof NotBoundError)) log.error({ err }, "H5 issue creation failed");
     }
   });
 

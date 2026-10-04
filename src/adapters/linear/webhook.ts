@@ -21,7 +21,7 @@ export function createLinearWebhookMiddleware(ctx: AppContext) {
 
   return async (koaCtx: Context, next: Next) => {
     if (!secret) {
-      log.warn("未配置 LINEAR_WEBHOOK_SECRET，跳过验签（仅开发环境）");
+      log.warn("LINEAR_WEBHOOK_SECRET is not set; skipping signature verification (development only)");
       await handlePayload(ctx, koaCtx.request.body as LinearWebhookPayload);
       koaCtx.status = 200;
       koaCtx.body = { ok: true };
@@ -47,7 +47,7 @@ export function createLinearWebhookMiddleware(ctx: AppContext) {
       client.verify(rawBody, signature, parsed.webhookTimestamp);
       payload = parsed;
     } catch (err) {
-      log.warn({ err }, "Linear webhook 验签失败");
+      log.warn({ err }, "Linear webhook signature verification failed");
       koaCtx.status = 401;
       koaCtx.body = { error: "Invalid signature" };
       return;
@@ -80,12 +80,12 @@ async function handlePayload(ctx: AppContext, payload: LinearWebhookPayload) {
       : (p.createdAt ?? "");
 
   // 防回声：OAuth(actor=app) 模式下忽略机器人自身触发的事件。
-  // api_key 模式下机器人就是 key 所有者本人，不能整体过滤（否则会吞掉本人在 Linear 里的真实操作），
+  // api_key mode下机器人就是 key 所有者本人，不能整体过滤（否则会吞掉本人在 Linear 里的真实操作），
   // 飞书写入 Linear 的回声由同步表 + 「（来自飞书）」标记去重。
   if (ctx.config.LINEAR_AUTH_MODE === "oauth") {
     const appUserId = await ctx.getLinearAppUserId();
     if (appUserId && p.actor?.id === appUserId) {
-      log.debug({ type: p.type, action: p.action }, "跳过自身事件");
+      log.debug({ type: p.type, action: p.action }, "Skipping own event");
       return;
     }
   }
@@ -94,7 +94,7 @@ async function handlePayload(ctx: AppContext, payload: LinearWebhookPayload) {
   if (await isDuplicate(ctx.db, eventId, "linear")) return;
 
   if (p.type === "AgentSessionEvent") {
-    log.info({ action: p.action }, "收到 AgentSessionEvent（预留）");
+    log.info({ action: p.action }, "Received AgentSessionEvent (reserved)");
     return;
   }
 

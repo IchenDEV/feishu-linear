@@ -13,6 +13,7 @@ import {
   select,
   type CardElement,
 } from "./kit.js";
+import { t } from "../i18n/index.js";
 
 const STATUS_TEMPLATE: Record<string, string> = {
   triage: "yellow",
@@ -23,16 +24,21 @@ const STATUS_TEMPLATE: Record<string, string> = {
   canceled: "red",
 };
 
-const PRIORITY_LABELS: Record<number, string> = {
-  0: "无优先级",
-  1: "🔴 Urgent",
-  2: "🟠 High",
-  3: "🟡 Medium",
-  4: "🔵 Low",
-};
-
 export function getPriorityLabel(priority: number): string {
-  return PRIORITY_LABELS[priority] ?? String(priority);
+  switch (priority) {
+    case 0:
+      return t("priority.none");
+    case 1:
+      return t("priority.urgent");
+    case 2:
+      return t("priority.high");
+    case 3:
+      return t("priority.medium");
+    case 4:
+      return t("priority.low");
+    default:
+      return String(priority);
+  }
 }
 
 export function statusTemplate(statusType?: string, statusName?: string): string {
@@ -86,14 +92,14 @@ export function buildIssueCard(
   };
   const elements: CardElement[] = [
     fields([
-      ["状态", data.status],
-      ["负责人", data.assignee ?? "未分配"],
-      ["优先级", getPriorityLabel(data.priority ?? 0)],
+      [t("field.status"), data.status],
+      [t("field.assignee"), data.assignee ?? t("field.unassigned")],
+      [t("field.priority"), getPriorityLabel(data.priority ?? 0)],
     ]),
     fields([
-      ["团队", data.teamName],
-      ["项目", data.projectName],
-      ["截止", data.dueDate],
+      [t("field.team"), data.teamName],
+      [t("field.project"), data.projectName],
+      [t("field.dueDate"), data.dueDate],
     ]),
   ];
   if (data.labels?.length) {
@@ -104,30 +110,30 @@ export function buildIssueCard(
   elements.push(hr());
 
   const buttons: CardElement[] = [
-    button({ text: "在 Linear 中打开", type: "primary", url: data.url }),
-    button({ text: "分配给我", value: { action: "assign_to_me", ...base } }),
-    button({ text: "订阅", value: { action: "subscribe_issue", ...base } }),
-    button({ text: "取消订阅", value: { action: "unsubscribe_issue", ...base } }),
+    button({ text: t("btn.openInLinear"), type: "primary", url: data.url }),
+    button({ text: t("btn.assignToMe"), value: { action: "assign_to_me", ...base } }),
+    button({ text: t("btn.subscribe"), value: { action: "subscribe_issue", ...base } }),
+    button({ text: t("btn.unsubscribe"), value: { action: "unsubscribe_issue", ...base } }),
   ];
   if (!data.synced && c.chatId && c.messageId) {
     buttons.push(
       button({
-        text: "同步此线程",
+        text: t("btn.syncThread"),
         value: { action: "upgrade_sync", ...base },
       }),
     );
   }
   elements.push(row(buttons));
   elements.push(
-    personPicker("assignee_pick", "指派给…", {
+    personPicker("assignee_pick", t("card.issue.assignPlaceholder"), {
       value: { action: "assign_to", ...base },
     }),
   );
   elements.push(
     form("comment_form", [
-      input("comment", "添加评论（将以你的 Linear 账号发布）", { multiline: true, required: true }),
+      input("comment", t("card.issue.commentPlaceholder"), { multiline: true, required: true }),
       button({
-        text: "评论",
+        text: t("btn.comment"),
         name: "submit_comment",
         submit: true,
         value: { action: "comment_issue", ...base },
@@ -136,7 +142,7 @@ export function buildIssueCard(
   );
   elements.push(
     note(
-      `创建于 ${data.createdAt}${data.creator ? ` · ${data.creator}` : ""}${data.synced ? " · 已同步线程" : ""}`,
+      `${t("card.issue.createdAt", { date: data.createdAt })}${data.creator ? ` · ${data.creator}` : ""}${data.synced ? ` · ${t("card.issue.threadSynced")}` : ""}`,
     ),
   );
 
@@ -152,21 +158,21 @@ export function buildIssueCompactCard(data: IssueCardData): Record<string, unkno
   const base = { issueId: data.identifier };
   const elements: CardElement[] = [
     fields([
-      ["状态", data.status],
-      ["负责人", data.assignee ?? "未分配"],
-      ["优先级", getPriorityLabel(data.priority ?? 0)],
+      [t("field.status"), data.status],
+      [t("field.assignee"), data.assignee ?? t("field.unassigned")],
+      [t("field.priority"), getPriorityLabel(data.priority ?? 0)],
     ]),
   ];
   const desc = clip(data.description, 200);
   if (desc) elements.push(md(desc));
   elements.push(
     row([
-      button({ text: "打开", type: "primary", url: data.url }),
-      button({ text: "分配给我", value: { action: "assign_to_me", ...base } }),
-      button({ text: "订阅", value: { action: "subscribe_issue", ...base } }),
-      button({ text: "取消订阅", value: { action: "unsubscribe_issue", ...base } }),
+      button({ text: t("btn.open"), type: "primary", url: data.url }),
+      button({ text: t("btn.assignToMe"), value: { action: "assign_to_me", ...base } }),
+      button({ text: t("btn.subscribe"), value: { action: "subscribe_issue", ...base } }),
+      button({ text: t("btn.unsubscribe"), value: { action: "unsubscribe_issue", ...base } }),
     ]),
-    personPicker("assignee_pick", "指派给…", {
+    personPicker("assignee_pick", t("card.issue.assignPlaceholder"), {
       value: { action: "assign_to", ...base },
     }),
   );
@@ -193,13 +199,13 @@ export function buildProjectCard(d: {
     template: "turquoise",
     elements: [
       fields([
-        ["状态", d.status],
-        ["负责人", d.lead],
-        ["目标日期", d.targetDate],
-        ["进度", d.progress !== undefined ? `${Math.round(d.progress * 100)}%` : undefined],
+        [t("field.status"), d.status],
+        [t("field.lead"), d.lead],
+        [t("field.targetDate"), d.targetDate],
+        [t("field.progress"), d.progress !== undefined ? `${Math.round(d.progress * 100)}%` : undefined],
       ]),
       ...(d.description ? [md(clip(d.description, 300))] : []),
-      row([button({ text: "查看项目", type: "primary", url: d.url })]),
+      row([button({ text: t("btn.viewProject"), type: "primary", url: d.url })]),
     ],
   });
 }
@@ -216,8 +222,8 @@ export function buildDocumentCard(d: {
     template: "wathet",
     elements: [
       ...(d.snippet ? [md(clip(d.snippet, 300))] : []),
-      note([d.creator, d.updatedAt && `更新于 ${d.updatedAt}`].filter(Boolean).join(" · ")),
-      row([button({ text: "打开文档", type: "primary", url: d.url })]),
+      note([d.creator, d.updatedAt && t("card.document.updatedAt", { date: d.updatedAt })].filter(Boolean).join(" · ")),
+      row([button({ text: t("btn.openDocument"), type: "primary", url: d.url })]),
     ],
   });
 }
@@ -235,12 +241,12 @@ export function buildInitiativeCard(d: {
     template: "purple",
     elements: [
       fields([
-        ["状态", d.status],
-        ["负责人", d.owner],
-        ["目标日期", d.targetDate],
+        [t("field.status"), d.status],
+        [t("field.owner"), d.owner],
+        [t("field.targetDate"), d.targetDate],
       ]),
       ...(d.description ? [md(clip(d.description, 300))] : []),
-      row([button({ text: "查看 Initiative", type: "primary", url: d.url })]),
+      row([button({ text: t("btn.viewInitiative"), type: "primary", url: d.url })]),
     ],
   });
 }
@@ -272,13 +278,13 @@ export function buildIssueNotifyCard(d: {
     template: statusTemplate(d.statusType, d.status),
     elements: [
       fields([
-        ["操作者", d.actor],
-        ["状态", d.status],
-        ["负责人", d.assignee],
+        [t("field.actor"), d.actor],
+        [t("field.status"), d.status],
+        [t("field.assignee"), d.assignee],
       ]),
       ...(d.detail ? [md(clip(d.detail, 500))] : []),
       row([
-        button({ text: "查看详情", type: "primary", url: d.url }),
+        button({ text: t("btn.viewDetails"), type: "primary", url: d.url }),
         ...(d.extraButtons ?? []),
       ]),
     ],
@@ -323,18 +329,18 @@ export function buildCreateIssueForm(d: CreateFormData): Record<string, unknown>
 
   if (d.teams.length > 1) {
     elements.push(
-      md(`**团队：${d.team.name}**　（切换团队会重置表单中的状态/标签/模板选项）`),
+      md(t("card.create.team", { team: d.team.name })),
       row(
         d.teams
-          .filter((t) => t.id !== d.team.id)
+          .filter((tm) => tm.id !== d.team.id)
           .slice(0, 6)
-          .map((t) =>
+          .map((tm) =>
             button({
-              text: `切换到 ${t.name}`,
+              text: t("card.create.switchTeam", { team: tm.name }),
               value: {
                 action: "create_form_switch_team",
                 ...ctxValue,
-                teamId: t.id,
+                teamId: tm.id,
                 title: d.defaults.title ?? "",
               },
             }),
@@ -344,11 +350,11 @@ export function buildCreateIssueForm(d: CreateFormData): Record<string, unknown>
   }
 
   const formEls: CardElement[] = [
-    input("title", "Issue 标题", {
+    input("title", t("card.create.titleInput"), {
       required: true,
       defaultValue: d.defaults.title?.slice(0, 200),
     }),
-    input("description", "描述（可选，支持 Markdown）", {
+    input("description", t("card.create.descInput"), {
       multiline: true,
       defaultValue: d.defaults.description,
     }),
@@ -357,7 +363,7 @@ export function buildCreateIssueForm(d: CreateFormData): Record<string, unknown>
     formEls.push(
       select(
         "projectId",
-        "项目（可选）",
+        t("card.create.project"),
         d.projects.map((p) => ({ label: p.name, value: p.id })),
         { initial: d.projects.find((p) => p.id === d.defaults.projectId)?.name },
       ),
@@ -367,25 +373,25 @@ export function buildCreateIssueForm(d: CreateFormData): Record<string, unknown>
     formEls.push(
       select(
         "stateId",
-        "状态（可选）",
+        t("card.create.state"),
         d.states.map((s) => ({ label: s.name, value: s.id })),
       ),
     );
   }
   formEls.push(
-    select("priority", "优先级（可选）", [
-      { label: "Urgent", value: "1" },
-      { label: "High", value: "2" },
-      { label: "Medium", value: "3" },
-      { label: "Low", value: "4" },
+    select("priority", t("card.create.priority"), [
+      { label: t("priority.urgent.plain"), value: "1" },
+      { label: t("priority.high.plain"), value: "2" },
+      { label: t("priority.medium.plain"), value: "3" },
+      { label: t("priority.low.plain"), value: "4" },
     ]),
-    personPicker("assignee", "负责人（默认：我）"),
+    personPicker("assignee", t("card.create.assignee")),
   );
   if (d.labels.length) {
     formEls.push(
       select(
         "labelIds",
-        "标签（可多选）",
+        t("card.create.labels"),
         d.labels.slice(0, 50).map((l) => ({ label: l.name, value: l.id })),
         { multi: true },
       ),
@@ -395,16 +401,16 @@ export function buildCreateIssueForm(d: CreateFormData): Record<string, unknown>
     formEls.push(
       select(
         "templateId",
-        "模板（可选）",
-        d.templates.slice(0, 10).map((t) => ({ label: t.name, value: t.id })),
-        { initial: d.templates.find((t) => t.id === d.defaults.templateId)?.name },
+        t("card.create.template"),
+        d.templates.slice(0, 10).map((tp) => ({ label: tp.name, value: tp.id })),
+        { initial: d.templates.find((tp) => tp.id === d.defaults.templateId)?.name },
       ),
     );
   }
   formEls.push(
     row([
       button({
-        text: "创建 Issue",
+        text: t("card.create.submit"),
         type: "primary",
         name: "submit_create",
         submit: true,
@@ -413,7 +419,7 @@ export function buildCreateIssueForm(d: CreateFormData): Record<string, unknown>
       ...(d.allowSync
         ? [
             button({
-              text: "创建并同步线程",
+              text: t("card.create.submitSync"),
               name: "submit_create_sync",
               submit: true,
               value: { action: "submit_create_issue", ...ctxValue, sync: true },
@@ -425,7 +431,7 @@ export function buildCreateIssueForm(d: CreateFormData): Record<string, unknown>
   elements.push(form("create_issue_form", formEls));
 
   return card({
-    title: "📝 创建 Linear Issue",
+    title: t("card.create.title"),
     subtitle: d.team.name,
     template: "blue",
     shared: false,
@@ -442,15 +448,15 @@ export function buildLinkIssueForm(d: {
 }): Record<string, unknown> {
   const v = { chatId: d.chatId, messageId: d.messageId ?? "", threadId: d.threadId ?? "" };
   return card({
-    title: "🔗 关联已有 Linear Issue",
+    title: t("card.link.title"),
     template: "blue",
     shared: false,
     elements: [
       form("link_issue_form", [
-        input("issueKey", "输入 Issue 编号或链接，如 ENG-123", { required: true }),
+        input("issueKey", t("card.link.input"), { required: true }),
         row([
           button({
-            text: "关联",
+            text: t("card.link.submit"),
             type: "primary",
             name: "submit_link",
             submit: true,
@@ -459,7 +465,7 @@ export function buildLinkIssueForm(d: {
           ...(d.allowSync
             ? [
                 button({
-                  text: "关联并同步线程",
+                  text: t("card.link.submitSync"),
                   name: "submit_link_sync",
                   submit: true,
                   value: { action: "submit_link_issue", ...v, sync: true },
@@ -475,14 +481,14 @@ export function buildLinkIssueForm(d: {
 /** 评论表单（从通知卡片的「评论」按钮打开） */
 export function buildCommentForm(d: { issueId: string; title?: string }): Record<string, unknown> {
   return card({
-    title: `💬 评论 ${d.issueId}`,
+    title: t("card.comment.title", { issue: d.issueId }),
     subtitle: d.title,
     template: "blue",
     elements: [
       form("comment_form", [
-        input("comment", "评论内容（将以你的 Linear 账号发布）", { multiline: true, required: true }),
+        input("comment", t("card.comment.input"), { multiline: true, required: true }),
         button({
-          text: "发表评论",
+          text: t("btn.postComment"),
           type: "primary",
           name: "submit_comment",
           submit: true,
@@ -506,7 +512,7 @@ export function buildResultCard(d: {
     template: d.ok ? "green" : "red",
     elements: [
       ...(d.text ? [md(d.text)] : []),
-      ...(d.url ? [row([button({ text: d.buttonText ?? "在 Linear 中打开", type: "primary", url: d.url })])] : []),
+      ...(d.url ? [row([button({ text: d.buttonText ?? t("btn.openInLinear"), type: "primary", url: d.url })])] : []),
     ],
   });
 }

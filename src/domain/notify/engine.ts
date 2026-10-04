@@ -14,6 +14,8 @@ import {
   SETTING_PROJECT_CHANNEL_PRIVATE,
   getSetting,
 } from "../settings/store.js";
+import { lazy, t, type LazyText } from "../../i18n/index.js";
+import { runLocalized } from "../../i18n/resolve.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("notify");
@@ -54,7 +56,7 @@ async function fanOut(
   type: EntityType,
   entityId: string,
   trigger: Trigger,
-  card: Record<string, unknown>,
+  makeCard: () => Record<string, unknown>,
   opts: { projectChannel?: boolean } = {},
 ) {
   const chats = new Set<string>();
@@ -72,9 +74,10 @@ async function fanOut(
   await Promise.all(
     [...chats].map(async (chatId) => {
       try {
-        await feishu.sendCard(ctx.lark, chatId, card);
+        // 每个群按自己的语言生成卡片
+        await runLocalized(ctx, { chatId }, () => feishu.sendCard(ctx.lark, chatId, makeCard()));
       } catch (err) {
-        log.error({ err, chatId, type, entityId }, "群通知发送失败");
+        log.error({ err, chatId, type, entityId }, "Failed to send the channel notification");
       }
     }),
   );
@@ -84,7 +87,7 @@ async function fanOut(
 
 export interface IssueEvent {
   trigger: Trigger;
-  action: string;
+  action: LazyText;
   issueId: string;
   identifier: string;
   title: string;
@@ -96,29 +99,30 @@ export interface IssueEvent {
   actorId?: string;
   teamId?: string;
   projectId?: string;
-  detail?: string;
+  detail?: LazyText;
 }
 
 function issueActions(identifier: string): CardElement[] {
   return [
-    button({ text: "分配给我", value: { action: "assign_to_me", issueId: identifier } }),
-    button({ text: "订阅", value: { action: "subscribe_issue", issueId: identifier } }),
+    button({ text: t("btn.assignToMe"), value: { action: "assign_to_me", issueId: identifier } }),
+    button({ text: t("btn.subscribe"), value: { action: "subscribe_issue", issueId: identifier } }),
   ];
 }
 
 export async function notifyIssueToChats(ctx: AppContext, e: IssueEvent) {
-  const card = buildIssueNotifyCard({
-    identifier: e.identifier,
-    title: e.title,
-    status: e.status,
-    statusType: e.statusType,
-    url: e.url,
-    action: e.action,
-    actor: e.actor,
-    assignee: e.assignee,
-    detail: e.detail,
-    extraButtons: e.trigger === "created" ? issueActions(e.identifier) : [],
-  });
+  const card = () =>
+    buildIssueNotifyCard({
+      identifier: e.identifier,
+      title: e.title,
+      status: e.status,
+      statusType: e.statusType,
+      url: e.url,
+      action: lazy(e.action) ?? "",
+      actor: e.actor,
+      assignee: e.assignee,
+      detail: lazy(e.detail),
+      extraButtons: e.trigger === "created" ? issueActions(e.identifier) : [],
+    });
   const jobs: Promise<unknown>[] = [];
   if (e.teamId) jobs.push(fanOut(ctx, "team", e.teamId, e.trigger, card));
   if (e.projectId) {
@@ -189,32 +193,35 @@ export async function notifyPersonal(
   const ids = [...new Set(opts.linearUserIds)].filter(
     (id) => id && id !== opts.excludeLinearUserId,
   );
-  const card = buildIssueNotifyCard({
-    identifier: opts.event.identifier,
-    title: opts.event.title,
-    status: opts.event.status,
-    statusType: opts.event.statusType,
-    url: opts.event.url,
-    action: opts.event.action,
-    actor: opts.event.actor,
-    assignee: opts.event.assignee,
-    detail: opts.event.detail,
-    extraButtons: [
-      button({
-        text: "评论",
-        value: { action: "prompt_comment", issueId: opts.event.identifier },
-      }),
-    ],
-  });
+  const makeCard = () =>
+    buildIssueNotifyCard({
+      identifier: opts.event.identifier,
+      title: opts.event.title,
+      status: opts.event.status,
+      statusType: opts.event.statusType,
+      url: opts.event.url,
+      action: lazy(opts.event.action) ?? "",
+      actor: opts.event.actor,
+      assignee: opts.event.assignee,
+      detail: lazy(opts.event.detail),
+      extraButtons: [
+        button({
+          text: t("btn.comment"),
+          value: { action: "prompt_comment", issueId: opts.event.identifier },
+        }),
+      ],
+    });
   for (const id of ids) {
     const mapping = await getMappingByLinearUserId(ctx, id);
     if (!mapping) continue;
     const prefs = await getPrefs(ctx, mapping.feishuOpenId);
     if (!prefs.enabled || !prefs[PREF_FIELD[opts.kind]]) continue;
     try {
-      await feishu.sendP2PCard(ctx.lark, mapping.feishuOpenId, card);
+      await runLocalized(ctx, { openId: mapping.feishuOpenId }, () =>
+        feishu.sendP2PCard(ctx.lark, mapping.feishuOpenId, makeCard()),
+      );
     } catch (err) {
-      log.error({ err, user: id }, "个人通知失败");
+      log.error({ err, user: id }, "Failed to send the personal notification");
     }
   }
 }
@@ -234,7 +241,7 @@ export async function issueStakeholders(ctx: AppContext, issueId: string) {
       (x): x is string => Boolean(x),
     );
   } catch (err) {
-    log.warn({ err }, "查询 Issue 相关人失败");
+    log.warn({ err }, "Failed to look up issue stakeholders");
     return [];
   }
 }
@@ -247,22 +254,23 @@ export async function notifyProjectEvent(
     trigger: Trigger;
     projectId: string;
     initiativeIds?: string[];
-    action: string;
+    action: LazyText;
     name: string;
     status?: string;
     url: string;
     actor: string;
-    detail?: string;
+    detail?: LazyText;
   },
 ) {
-  const card = buildIssueNotifyCard({
-    title: e.name,
-    status: e.status,
-    url: e.url,
-    action: `📁 ${e.action}`,
-    actor: e.actor,
-    detail: e.detail,
-  });
+  const card = () =>
+    buildIssueNotifyCard({
+      title: e.name,
+      status: e.status,
+      url: e.url,
+      action: `📁 ${lazy(e.action)}`,
+      actor: e.actor,
+      detail: lazy(e.detail),
+    });
   await Promise.all([
     fanOut(ctx, "project", e.projectId, e.trigger, card, { projectChannel: true }),
     ...(e.initiativeIds ?? []).map((id) =>
@@ -276,22 +284,23 @@ export async function notifyInitiativeEvent(
   e: {
     trigger: Trigger;
     initiativeId: string;
-    action: string;
+    action: LazyText;
     name: string;
     status?: string;
     url: string;
     actor: string;
-    detail?: string;
+    detail?: LazyText;
   },
 ) {
-  const card = buildIssueNotifyCard({
-    title: e.name,
-    status: e.status,
-    url: e.url,
-    action: `🎯 ${e.action}`,
-    actor: e.actor,
-    detail: e.detail,
-  });
+  const card = () =>
+    buildIssueNotifyCard({
+      title: e.name,
+      status: e.status,
+      url: e.url,
+      action: `🎯 ${lazy(e.action)}`,
+      actor: e.actor,
+      detail: lazy(e.detail),
+    });
   await fanOut(ctx, "initiative", e.initiativeId, e.trigger, card);
 }
 
@@ -426,7 +435,7 @@ async function projectMemberOpenIds(ctx: AppContext, projectId: string) {
     const ids = [lead?.id, ...members.map((m) => m.id)].filter((x): x is string => Boolean(x));
     return feishuOpenIdsForLinearUsers(ctx, ids);
   } catch (err) {
-    log.warn({ err }, "读取项目成员失败");
+    log.warn({ err }, "Failed to read project members");
     return [];
   }
 }
@@ -450,12 +459,12 @@ export async function createProjectChannel(
   const res = await feishu.createGroup(
     ctx.lark,
     `📋 ${project.name}`,
-    `Linear 项目：${project.name}\n${project.url}`,
+    t("channel.description", { name: project.name, url: project.url }),
     members,
     (await getSetting<boolean>(ctx, SETTING_PROJECT_CHANNEL_PRIVATE)) ? "private" : "public",
   );
   const chatId = (res.data as Record<string, unknown>)?.chat_id as string | undefined;
-  if (!chatId) throw new Error("创建群失败：未返回 chat_id");
+  if (!chatId) throw new Error(t("channel.createFailed"));
 
   const [row] = await ctx.db
     .insert(schema.projectChannels)
@@ -469,9 +478,9 @@ export async function createProjectChannel(
     .returning();
 
   try {
-    await feishu.addChatUrlTab(ctx.lark, chatId, { name: "Linear 项目", url: project.url });
+    await feishu.addChatUrlTab(ctx.lark, chatId, { name: t("channel.tab"), url: project.url });
   } catch (err) {
-    log.warn({ err }, "添加群标签页失败（需要 im:chat 权限，非致命）");
+    log.warn({ err }, "Failed to add the chat tab (requires the im:chat.tabs:write_only scope; non-fatal)");
   }
   try {
     const intro = await feishu.sendCard(
@@ -490,10 +499,10 @@ export async function createProjectChannel(
     const msgId = (intro.data as Record<string, unknown>)?.message_id as string | undefined;
     if (msgId) await feishu.pinMessage(ctx.lark, msgId).catch(() => {});
   } catch (err) {
-    log.warn({ err }, "发送项目简介失败（非致命）");
+    log.warn({ err }, "Failed to post the project intro (non-fatal)");
   }
 
-  log.info({ project: opts.projectId, chat: chatId, members: members.length }, "项目频道已创建");
+  log.info({ project: opts.projectId, chat: chatId, members: members.length }, "Project channel created");
   return row;
 }
 
@@ -518,7 +527,7 @@ export async function syncProjectChannelMembers(ctx: AppContext, linearProjectId
   const members = await projectMemberOpenIds(ctx, linearProjectId);
   if (members.length) {
     await feishu.addChatMembers(ctx.lark, channel.feishuChatId, members).catch((err) => {
-      log.warn({ err }, "拉成员进项目频道失败");
+      log.warn({ err }, "Failed to add members to the project channel");
     });
   }
 }

@@ -3,6 +3,8 @@ import type { AppContext } from "../../app/context.js";
 import { schema } from "../../db/index.js";
 import * as feishu from "../../adapters/feishu/client.js";
 import { buildIssueNotifyCard } from "../../cards/issue.js";
+import { t } from "../../i18n/index.js";
+import { runLocalized } from "../../i18n/resolve.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("view-poll");
@@ -72,7 +74,9 @@ export async function pollViewSubscriptions(ctx: AppContext) {
       const wantAdded = sub.trigger === "added" || sub.trigger === "both";
       const wantDone = sub.trigger === "completed" || sub.trigger === "both";
 
-      const send = async (issues: ViewIssue[], action: string) => {
+      const send = (issues: ViewIssue[], actionText: () => string) =>
+        runLocalized(ctx, { chatId: sub.feishuChatId }, async () => {
+        const action = actionText();
         for (const i of issues.slice(0, MAX_PER_RUN)) {
           await feishu.sendCard(
             ctx.lark,
@@ -84,7 +88,7 @@ export async function pollViewSubscriptions(ctx: AppContext) {
               statusType: i.state?.type,
               url: i.url,
               action,
-              actor: `视图「${sub.linearViewName ?? "View"}」`,
+              actor: t("notify.view.actor", { name: sub.linearViewName ?? "View" }),
               assignee: i.assignee?.name,
             }),
           );
@@ -93,20 +97,25 @@ export async function pollViewSubscriptions(ctx: AppContext) {
           await feishu.sendText(
             ctx.lark,
             sub.feishuChatId,
-            `视图「${sub.linearViewName}」另有 ${issues.length - MAX_PER_RUN} 个 Issue ${action}，请在 Linear 中查看。`,
+            t("notify.view.more", {
+              name: sub.linearViewName,
+              count: issues.length - MAX_PER_RUN,
+              action,
+            }),
           );
         }
-      };
+        });
 
-      if (wantAdded) await send(diff.added, "新进入视图");
-      if (wantDone) await send(diff.completed, "视图内已完成");
+
+      if (wantAdded) await send(diff.added, () => t("notify.view.added"));
+      if (wantDone) await send(diff.completed, () => t("notify.view.done"));
 
       await ctx.db
         .update(schema.viewSubscriptions)
         .set({ snapshot: diff.snapshot, snapshotAt: new Date() })
         .where(eq(schema.viewSubscriptions.id, sub.id));
     } catch (err) {
-      log.error({ err, view: sub.linearViewId }, "视图订阅轮询失败");
+      log.error({ err, view: sub.linearViewId }, "View subscription polling failed");
     }
   }
   return { checked: subs.length };

@@ -104,7 +104,7 @@ export async function buildGuidanceText(
     getChatGuidance(ctx, chatId),
   ]);
   const parts: string[] = [];
-  if (workspace) parts.push(`### 工作区指引\n${workspace}`);
-  if (chat?.guidance) parts.push(`### 本群指引\n${chat.guidance}`);
+  if (workspace) parts.push(`### Workspace guidance\n${workspace}`);
+  if (chat?.guidance) parts.push(`### Channel guidance\n${chat.guidance}`);
   return parts.join("\n\n");
 }

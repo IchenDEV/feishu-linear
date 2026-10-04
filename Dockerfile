@@ -1,6 +1,6 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
-# 版本由 package.json 的 packageManager 字段固定
+# pnpm version is pinned by the packageManager field in package.json
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
@@ -21,5 +21,5 @@ USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-# 启动前先执行数据库迁移（幂等）
+# Run database migrations (idempotent) before starting
 CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]

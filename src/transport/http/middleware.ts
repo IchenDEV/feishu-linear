@@ -63,7 +63,7 @@ export const errorMiddleware: Middleware = async (koaCtx, next) => {
   try {
     await next();
   } catch (err) {
-    logger.error({ err, path: koaCtx.path }, "请求处理异常");
+    logger.error({ err, path: koaCtx.path }, "Unhandled request error");
     koaCtx.status = (err as { status?: number }).status ?? 500;
     koaCtx.body = {
       error: err instanceof Error ? err.message : "Internal Error",
@@ -83,7 +83,7 @@ export function requireBearer(getToken: () => string, feature: string) {
     const token = getToken();
     if (!token) {
       koaCtx.status = 503;
-      koaCtx.body = { error: `${feature} 未启用（未配置对应 token）` };
+      koaCtx.body = { error: `${feature} is disabled (no token configured)` };
       return;
     }
     const header = koaCtx.get("authorization");

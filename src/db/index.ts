@@ -55,10 +55,10 @@ export function createRequestDbScope(databaseUrl: string): RequestDbScope {
   pool.on("error", (err) => {
     // pg-cloudflare 的读循环在我们主动 pool.end() 关闭 socket 后会抛出这个错误，属于正常收尾
     if (/socket has been closed/i.test(err.message)) {
-      log.debug("Postgres socket 已关闭");
+      log.debug("Postgres socket closed");
       return;
     }
-    log.error({ err }, "Postgres 连接异常");
+    log.error({ err }, "Postgres connection error");
   });
   return { db: createDb(pool), pool, tasks: [] };
 }
@@ -76,7 +76,7 @@ export function getDb(databaseUrl: string): Db {
         const scope = requestDbStorage.getStore();
         if (!scope) {
           throw new Error(
-            "per-request 模式下数据库只能在请求（或其后台任务）内使用",
+            "In per-request mode the database can only be used inside a request (or its background tasks)",
           );
         }
         const value = Reflect.get(scope.db, prop);
@@ -93,12 +93,12 @@ export function getDb(databaseUrl: string): Db {
     idleTimeoutMillis: 5_000,
     connectionTimeoutMillis: 5_000,
   });
-  pool.on("error", (err) => log.error({ err }, "Postgres 连接池异常"));
+  pool.on("error", (err) => log.error({ err }, "Postgres pool error"));
   if (process.env.VERCEL) attachDatabasePool(pool);
 
   _pool = pool;
   _db = createDb(pool);
-  log.info("数据库连接池已创建");
+  log.info("Database pool created");
   return _db;
 }
 

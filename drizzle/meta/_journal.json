@@ -15,6 +15,13 @@
       "when": 1791146251416,
       "tag": "0001_brave_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791148965223,
+      "tag": "0002_locale",
+      "breakpoints": true
     }
   ]
 }

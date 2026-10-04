@@ -11,7 +11,7 @@ export function createFeishuClient(config: Env): lark.Client {
     appType: lark.AppType.SelfBuild,
     domain: lark.Domain.Feishu,
   });
-  log.info("飞书客户端已初始化");
+  log.info("Feishu client initialized");
   return client;
 }
 
@@ -256,7 +256,7 @@ export async function uploadImage(client: lark.Client, data: Buffer) {
     data: { image_type: "message", image: data },
   });
   const key = res?.image_key;
-  if (!key) throw new Error("飞书图片上传失败");
+  if (!key) throw new Error("Feishu image upload failed");
   return key;
 }
 
@@ -269,7 +269,7 @@ export async function uploadFile(
     data: { file_type: "stream", file_name: opts.fileName, file: opts.data },
   });
   const key = res?.file_key;
-  if (!key) throw new Error("飞书文件上传失败");
+  if (!key) throw new Error("Feishu file upload failed");
   return key;
 }
 
@@ -334,7 +334,7 @@ export async function updateCardByToken(
     data: { token, card },
   });
   if (res?.code && res.code !== 0) {
-    throw new Error(`延时更新卡片失败 code=${res.code} ${res.msg ?? ""}`);
+    throw new Error(`Delayed card update failed code=${res.code} ${res.msg ?? ""}`);
   }
   return res;
 }
@@ -358,7 +358,7 @@ export async function sendEphemeralCard(
     },
   });
   if (res?.code && res.code !== 0) {
-    throw new Error(`临时卡片发送失败 code=${res.code} ${res.msg ?? ""}`);
+    throw new Error(`Ephemeral card send failed code=${res.code} ${res.msg ?? ""}`);
   }
   return res;
 }

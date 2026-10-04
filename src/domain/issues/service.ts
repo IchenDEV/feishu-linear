@@ -14,6 +14,7 @@ import {
   type Attachment,
 } from "../messages/content.js";
 import { createChildLogger } from "../../logger.js";
+import { t } from "../../i18n/index.js";
 
 const log = createChildLogger("issues");
 
@@ -22,15 +23,15 @@ const log = createChildLogger("issues");
 /**
  * 以操作者名义写入 Linear。
  * - oauth(actor=app) 模式：用 createAsUser 展示为「飞书用户名（via 飞书）」
- * - api_key 模式：Linear 会署名为 key 所有者，所以在正文里补一行「由谁在飞书发起」
+ * - api_key mode：Linear 会署名为 key 所有者，所以在正文里补一行「由谁在飞书发起」
  */
 export function attribute(ctx: AppContext, name: string) {
   const oauth = ctx.config.LINEAR_AUTH_MODE === "oauth";
   if (!name) return { createAsUser: undefined, footer: "", prefix: "" };
   return {
     createAsUser: oauth ? name : undefined,
-    footer: oauth ? "" : `\n\n---\n_由 ${name} 通过飞书创建_`,
-    prefix: oauth ? "" : `**${name}**（来自飞书）：\n\n`,
+    footer: oauth ? "" : `\n\n---\n_${t("issue.attribution.footer", { name })}_`,
+    prefix: oauth ? "" : `${t("issue.attribution.prefix", { name })}\n\n`,
   };
 }
 
@@ -116,12 +117,12 @@ export interface CreateIssueOpts {
 
 export async function createIssueFromFeishu(ctx: AppContext, opts: CreateIssueOpts) {
   const identity = await requireLinearIdentity(ctx, opts.operatorOpenId);
-  const operatorName = await getFeishuUserName(ctx, opts.operatorOpenId, identity.linearName ?? "飞书用户");
+  const operatorName = await getFeishuUserName(ctx, opts.operatorOpenId, identity.linearName ?? t("bind.unknownUser"));
   const linear = await ctx.getLinear();
 
   const defaults = await resolveChatDefaults(ctx, opts.chatId);
   const teamId = opts.teamId ?? defaults.teamId ?? (await linearApi.getTeams(linear))[0]?.id;
-  if (!teamId) throw new Error("未找到可用的 Linear 团队");
+  if (!teamId) throw new Error(t("issue.noTeam"));
 
   // 模板：显式 > 群默认 > 团队默认。模板必须属于该团队，否则忽略
   let templateId = opts.templateId ?? defaults.templateId;
@@ -156,7 +157,7 @@ export async function createIssueFromFeishu(ctx: AppContext, opts: CreateIssueOp
     createAsUser: who.createAsUser,
   });
 
-  // 回链：在 Linear Issue 上挂来源飞书消息 / 会话
+  // 回链：在 Linear Issue 上挂来源Feishu message / 会话
   // 菜单 / 私聊入口没有真实群（chatId 不是 oc_ 开头），不挂回链
   const inChat = opts.chatId.startsWith("oc_");
   if (inChat) {
@@ -209,16 +210,16 @@ async function attachFeishuBacklink(
     try {
       chatName = (await feishu.getChatInfo(ctx.lark, chatId)).name ?? "";
     } catch {}
-    const title = `飞书${chatName ? ` · ${chatName}` : ""}${excerpt ? `：${excerpt.slice(0, 40)}` : ""}`;
+    const title = `${t("issue.backlinkTitle")}${chatName ? ` · ${chatName}` : ""}${excerpt ? `: ${excerpt.slice(0, 40)}` : ""}`;
     await linearApi.linkUrlAttachment(linear, issueId, url, title);
   } catch (err) {
-    log.warn({ err }, "创建飞书回链失败（非致命）");
+    log.warn({ err }, "Failed to create the Feishu backlink (non-fatal)");
   }
 }
 
 // ───────────────────────── 关联已有 Issue ─────────────────────────
 
-/** 把一条飞书消息关联到已有 Issue（仅挂回链，不同步；可选升级为同步线程） */
+/** 把一条Feishu message关联到已有 Issue（仅挂回链，不同步；可选升级为同步线程） */
 export async function linkExistingIssue(
   ctx: AppContext,
   opts: {
@@ -239,7 +240,7 @@ export async function linkExistingIssue(
   const key =
     opts.issueKey.match(/([A-Za-z][A-Za-z0-9]*-\d+)/)?.[1]?.toUpperCase() ?? opts.issueKey.trim();
   const issue = await linearApi.getIssue(linear, key);
-  if (!issue) throw new Error(`未找到 Issue ${opts.issueKey}`);
+  if (!issue) throw new Error(t("issue.notFound", { key: opts.issueKey }));
 
   await attachFeishuBacklink(ctx, issue.id, opts.chatId, opts.messageId, opts.excerpt);
 
@@ -249,7 +250,7 @@ export async function linkExistingIssue(
     if (md.length) {
       await linearApi.createComment(linear, {
         issueId: issue.id,
-        body: `来自飞书的附件：\n\n${md.join("\n\n")}`,
+        body: `${t("issue.attachmentsHeader")}\n\n${md.join("\n\n")}`,
       });
     }
   }
@@ -293,13 +294,13 @@ export async function upgradeToSyncThread(
   },
 ) {
   try {
-    const notice = `🔗 已与 Linear ${opts.issue.identifier} 建立同步：此话题里的回复会同步为 Issue 评论（含图片/文件），Issue 的评论与状态变更也会同步到这里。`;
+    const notice = t("issue.syncNotice", { id: opts.issue.identifier });
     const res = await feishu.replyText(ctx.lark, opts.messageId, notice, true);
     const data = (res as { data?: Record<string, unknown> }).data ?? {};
     const threadId = (data.thread_id as string | undefined) ?? opts.threadId;
     const rootMsgId = (data.root_id as string | undefined) ?? opts.messageId;
     if (!threadId) {
-      log.warn({ data }, "回复未返回 thread_id，无法建立同步");
+      log.warn({ data }, "The reply returned no thread_id; cannot set up sync");
       return null;
     }
     return await createSyncThread(ctx, {
@@ -311,7 +312,7 @@ export async function upgradeToSyncThread(
       linearIssueUrl: opts.issue.url,
     });
   } catch (err) {
-    log.warn({ err }, "建立同步线程失败");
+    log.warn({ err }, "Failed to set up the synced thread");
     return null;
   }
 }
@@ -330,14 +331,14 @@ export async function assignIssueToLinearUser(
   const identity = await requireLinearIdentity(ctx, opts.operatorOpenId);
   const linear = await ctx.getLinear();
   const issue = await linearApi.getIssue(linear, opts.issueKey);
-  if (!issue) return { success: false, message: `未找到 Issue ${opts.issueKey}` };
+  if (!issue) return { success: false, message: t("issue.notFound", { key: opts.issueKey }) };
   const assigneeId = opts.assigneeLinearId ?? identity.linearUserId;
   await linearApi.updateIssue(linear, issue.id, { assigneeId });
   return {
     success: true,
     message: opts.assigneeLinearId
-      ? `已更新 ${issue.identifier} 的负责人`
-      : `已将 ${issue.identifier} 分配给你`,
+      ? t("issue.assigned.other", { id: issue.identifier })
+      : t("issue.assigned.self", { id: issue.identifier }),
   };
 }
 
@@ -357,7 +358,7 @@ export async function setIssueSubscription(
   await requireLinearIdentity(ctx, opts.operatorOpenId);
   const linear = await ctx.getLinear();
   const issue = await linearApi.getIssue(linear, opts.issueKey);
-  if (!issue) return { success: false, message: `未找到 Issue ${opts.issueKey}` };
+  if (!issue) return { success: false, message: t("issue.notFound", { key: opts.issueKey }) };
   // 订阅的是 Linear 用户本人。API key 模式下 subscribe 针对 key 所有者，故用 subscriberIds 指定
   const identity = await requireLinearIdentity(ctx, opts.operatorOpenId);
   const current = (await issue.subscribers()).nodes.map((u) => u.id);
@@ -367,7 +368,9 @@ export async function setIssueSubscription(
   await linear.updateIssue(issue.id, { subscriberIds: [...set] });
   return {
     success: true,
-    message: opts.subscribe ? `已订阅 ${issue.identifier}` : `已取消订阅 ${issue.identifier}`,
+    message: opts.subscribe
+      ? t("issue.subscribed", { id: issue.identifier })
+      : t("issue.unsubscribed", { id: issue.identifier }),
   };
 }
 
@@ -381,10 +384,10 @@ export async function commentOnIssue(
   },
 ): Promise<OpResult> {
   const identity = await requireLinearIdentity(ctx, opts.operatorOpenId);
-  const name = await getFeishuUserName(ctx, opts.operatorOpenId, identity.linearName ?? "飞书用户");
+  const name = await getFeishuUserName(ctx, opts.operatorOpenId, identity.linearName ?? t("bind.unknownUser"));
   const linear = await ctx.getLinear();
   const issue = await linearApi.getIssue(linear, opts.issueKey);
-  if (!issue) return { success: false, message: `未找到 Issue ${opts.issueKey}` };
+  if (!issue) return { success: false, message: t("issue.notFound", { key: opts.issueKey }) };
   const who = attribute(ctx, name);
   const att = opts.attachments?.length
     ? await uploadAttachmentsToLinear(ctx, opts.attachments)
@@ -394,5 +397,5 @@ export async function commentOnIssue(
     body: who.prefix + [opts.body, ...att].filter(Boolean).join("\n\n"),
     createAsUser: who.createAsUser,
   });
-  return { success: true, message: `已评论 ${issue.identifier}` };
+  return { success: true, message: t("issue.commented", { id: issue.identifier }) };
 }

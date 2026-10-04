@@ -1,7 +1,7 @@
 import type { AppContext } from "../../app/context.js";
 import * as linearApi from "../../adapters/linear/api.js";
 import {
-  FROM_FEISHU_MARK,
+  isFromFeishu,
   handleDuplicate,
   notifyStatusChange,
   syncLinearCommentToFeishu,
@@ -18,7 +18,9 @@ import {
   syncProjectChannelName,
   getProjectChannel,
 } from "./engine.js";
+import { getPriorityLabel } from "../../cards/issue.js";
 import { listMappings } from "../users/mapping.js";
+import { t } from "../../i18n/index.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("linear-events");
@@ -53,7 +55,7 @@ export async function handleLinearEvent(ctx: AppContext, ev: LinearEvent) {
     case "InitiativeUpdate":
       return onInitiativeUpdate(ctx, ev, actor);
     default:
-      log.debug({ type: ev.type, action: ev.action }, "未处理的 Linear 事件");
+      log.debug({ type: ev.type, action: ev.action }, "Unhandled Linear event");
   }
 }
 
@@ -76,12 +78,12 @@ async function onIssue(ctx: AppContext, ev: LinearEvent, actor: string) {
   };
 
   if (ev.action === "create") {
-    await notifyIssueToChats(ctx, { ...base, trigger: "created", action: "新 Issue" });
+    await notifyIssueToChats(ctx, { ...base, trigger: "created", action: () => t("notify.newIssue") });
     if (d.assigneeId && d.assigneeId !== ev.actor?.id) {
       await notifyPersonal(ctx, {
         linearUserIds: [d.assigneeId],
         kind: "assigned",
-        event: { ...base, action: "你被分配了新 Issue" },
+        event: { ...base, action: () => t("notify.assignedNew") },
       });
     }
     return;
@@ -101,15 +103,24 @@ async function onIssue(ctx: AppContext, ev: LinearEvent, actor: string) {
     await notifyIssueToChats(ctx, {
       ...base,
       trigger: done ? "completed" : "updated",
-      action: done ? (base.statusType === "completed" ? "✅ 已完成" : "❌ 已取消") : "状态变更",
-      detail: `状态变更为 **${base.status}**`,
+      action: () =>
+        done
+          ? base.statusType === "completed"
+            ? t("notify.completed")
+            : t("notify.canceled")
+          : t("notify.statusChange"),
+      detail: () => t("notify.statusChangedTo", { status: base.status }),
     });
     const people = await issueStakeholders(ctx, d.id);
     await notifyPersonal(ctx, {
       linearUserIds: people,
       kind: "status",
       excludeLinearUserId: ev.actor?.id,
-      event: { ...base, action: "Issue 状态变更", detail: `状态变更为 **${base.status}**` },
+      event: {
+        ...base,
+        action: () => t("notify.issueStatusChange"),
+        detail: () => t("notify.statusChangedTo", { status: base.status }),
+      },
     });
   }
 
@@ -117,25 +128,24 @@ async function onIssue(ctx: AppContext, ev: LinearEvent, actor: string) {
     await notifyIssueToChats(ctx, {
       ...base,
       trigger: "updated",
-      action: "负责人变更",
-      detail: `负责人变更为 **${base.assignee ?? "未分配"}**`,
+      action: () => t("notify.assigneeChange"),
+      detail: () => t("notify.assigneeChangedTo", { name: base.assignee ?? t("field.unassigned") }),
     });
     if (d.assigneeId && d.assigneeId !== ev.actor?.id) {
       await notifyPersonal(ctx, {
         linearUserIds: [d.assigneeId],
         kind: "assigned",
-        event: { ...base, action: "Issue 被分配给你" },
+        event: { ...base, action: () => t("notify.assignedToYou") },
       });
     }
   }
 
   if ("priority" in changed) {
-    const labels = ["无优先级", "Urgent", "High", "Medium", "Low"];
     await notifyIssueToChats(ctx, {
       ...base,
       trigger: "updated",
-      action: "优先级变更",
-      detail: `优先级变更为 **${labels[d.priority] ?? d.priority}**`,
+      action: () => t("notify.priorityChange"),
+      detail: () => t("notify.priorityChangedTo", { name: getPriorityLabel(d.priority) }),
     });
   }
 }
@@ -146,7 +156,7 @@ async function onComment(ctx: AppContext, ev: LinearEvent, actor: string) {
   if (ev.action !== "create") return;
   const d = ev.data;
   const body = (d.body as string) ?? "";
-  if (body.slice(0, 200).includes(FROM_FEISHU_MARK)) return; // 我们自己同步过去的
+  if (isFromFeishu(body)) return; // 我们自己同步过去的
 
   await syncLinearCommentToFeishu(ctx, {
     linearIssueId: d.issueId,
@@ -183,7 +193,7 @@ async function onComment(ctx: AppContext, ev: LinearEvent, actor: string) {
     teamId: team?.id,
     projectId: project?.id,
     trigger: "comment",
-    action: "💬 新评论",
+    action: () => t("notify.newComment"),
     detail: excerpt,
   });
 
@@ -196,7 +206,7 @@ async function onComment(ctx: AppContext, ev: LinearEvent, actor: string) {
       linearUserIds: mentioned,
       kind: "mentioned",
       excludeLinearUserId: ev.actor?.id,
-      event: { ...base, action: "💬 你被 @ 提及", detail: excerpt },
+      event: { ...base, action: () => t("notify.mentioned"), detail: excerpt },
     });
   }
   const people = (await issueStakeholders(ctx, issue.id)).filter(
@@ -206,7 +216,7 @@ async function onComment(ctx: AppContext, ev: LinearEvent, actor: string) {
     linearUserIds: people,
     kind: "comment",
     excludeLinearUserId: ev.actor?.id,
-    event: { ...base, action: "💬 你关注的 Issue 有新评论", detail: excerpt },
+    event: { ...base, action: () => t("notify.followedComment"), detail: excerpt },
   });
 }
 
@@ -248,7 +258,7 @@ async function onProject(ctx: AppContext, ev: LinearEvent, actor: string) {
       try {
         await createProjectChannel(ctx, { projectId: id, autoCreated: true });
       } catch (err) {
-        log.error({ err, id }, "自动创建项目频道失败");
+        log.error({ err, id }, "Failed to auto-create the project channel");
       }
     }
     return;
@@ -269,12 +279,12 @@ async function onProject(ctx: AppContext, ev: LinearEvent, actor: string) {
       trigger: done ? "completed" : "updated",
       projectId: id,
       initiativeIds: await projectInitiativeIds(ctx, id),
-      action: "项目状态变更",
+      action: () => t("notify.projectStatusChange"),
       name,
       status,
       url,
       actor,
-      detail: `项目状态变更为 **${status}**`,
+      detail: () => t("notify.projectStatusChangedTo", { status }),
     });
   }
 }
@@ -283,13 +293,13 @@ async function onProjectUpdate(ctx: AppContext, ev: LinearEvent, actor: string) 
   if (ev.action !== "create") return;
   const d = ev.data;
   const projectId = (d.projectId ?? d.project?.id) as string;
-  const health = d.health ? `（${d.health}）` : "";
+  const healthOf = () => (d.health ? t("notify.health", { health: d.health }) : "");
   await notifyProjectEvent(ctx, {
     trigger: "updated",
     projectId,
     initiativeIds: await projectInitiativeIds(ctx, projectId),
-    action: `项目更新${health}`,
-    name: (d.project?.name as string) ?? "项目",
+    action: () => t("notify.projectUpdate", { health: healthOf() }),
+    name: (d.project?.name as string) ?? t("notify.projectFallback"),
     url: ev.url ?? "",
     actor,
     detail: (d.body as string) ?? "",
@@ -305,12 +315,12 @@ async function onInitiative(ctx: AppContext, ev: LinearEvent, actor: string) {
   await notifyInitiativeEvent(ctx, {
     trigger: /complete/i.test(status) ? "completed" : "updated",
     initiativeId: d.id,
-    action: "Initiative 状态变更",
+    action: () => t("notify.initiativeStatusChange"),
     name: d.name,
     status,
     url: ev.url ?? "",
     actor,
-    detail: `状态变更为 **${status}**`,
+    detail: () => t("notify.statusChangedTo", { status }),
   });
 }
 
@@ -320,7 +330,7 @@ async function onInitiativeUpdate(ctx: AppContext, ev: LinearEvent, actor: strin
   await notifyInitiativeEvent(ctx, {
     trigger: "updated",
     initiativeId: (d.initiativeId ?? d.initiative?.id) as string,
-    action: `Initiative 更新${d.health ? `（${d.health}）` : ""}`,
+    action: () => t("notify.initiativeUpdate", { health: d.health ? t("notify.health", { health: d.health }) : "" }),
     name: (d.initiative?.name as string) ?? "Initiative",
     url: ev.url ?? "",
     actor,

@@ -1,4 +1,4 @@
-/** 从飞书消息 content JSON 提取纯文本 */
+/** 从Feishu message content JSON 提取纯文本 */
 export function extractTextFromFeishuContent(
   content: string,
   messageType: string,
@@ -31,10 +31,10 @@ export function extractTextFromFeishuContent(
       }
 
       case "interactive":
-        return "[卡片消息]";
+        return "[Card message]";
 
       default:
-        return `[${messageType} 消息]`;
+        return `[${messageType} message]`;
     }
   } catch {
     return content;

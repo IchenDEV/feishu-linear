@@ -7,10 +7,12 @@ import { linkExistingIssue } from "../issues/service.js";
 import { createSyncThreadForIssue } from "../sync/threads.js";
 import { fetchSourceMessage, deriveTitle } from "../messages/source.js";
 import { submitAsk } from "../asks.js";
-import { bindByEmail, requireLinearIdentity, NotBoundError } from "../users/mapping.js";
+import { bindVerified, requireLinearIdentity, NotBoundError } from "../users/mapping.js";
 import { buildSettingsForChat, permissions, requireConfigurer } from "../settings/service.js";
 import { createProjectChannel, getPrefs } from "../notify/engine.js";
 import type { Attachment } from "../messages/content.js";
+import { t, normalizeLocale, currentLocale, withLocale } from "../../i18n/index.js";
+import { setUserLocale } from "../../i18n/resolve.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("commands");
@@ -29,19 +31,7 @@ export interface CommandEnv {
   attachments: Attachment[];
 }
 
-export const HELP_TEXT = [
-  "Linear 连接器 · 命令（群里加 / 前缀，私聊可省略）",
-  "• /linear — 打开「创建 Issue」表单；在话题内或回复某条消息时发送，会把那条消息转为 Issue",
-  "• /linear create 标题 — 带标题预填表单",
-  "• /linear link [ENG-123] — 把消息关联到已有 Issue",
-  "• /linear sync ENG-123 — 让当前话题与 Issue 双向同步",
-  "• /linear bind 邮箱 — 绑定你的 Linear 账号",
-  "• /linear me — 我的通知偏好",
-  "• /linear settings — 本群设置（默认团队/项目、订阅、Guidance、Asks；群主/管理员）",
-  "• /linear project-channel 项目名 — 为项目创建专属群（管理员）",
-  "• /ask 内容 — 向团队提需求（无需 Linear 账号，需管理员先启用 Asks）",
-  "• @机器人 + 自然语言 — 智能体帮你查询、创建、更新",
-].join("\n");
+export const helpText = () => t("help.text");
 
 /** 识别命令。群里必须以 / 开头；私聊也接受裸词 */
 export function parseCommand(
@@ -57,7 +47,7 @@ export function parseCommand(
   }
   if (chatType === "p2p") {
     const [cmd = "", ...rest] = t.split(/\s+/);
-    const known = ["help", "帮助", "bind", "create", "新建", "link", "me", "settings"];
+    const known = ["help", "帮助", "bind", "create", "新建", "link", "me", "settings", "lang"];
     if (known.includes(cmd.toLowerCase())) {
       return { cmd: cmd.toLowerCase(), args: rest.join(" ").trim() };
     }
@@ -84,17 +74,12 @@ export async function runCommand(
     switch (cmd) {
       case "help":
       case "帮助":
-        return void (await say(ctx, env, HELP_TEXT));
+        return void (await say(ctx, env, helpText()));
 
       case "bind": {
-        if (!args) return void (await say(ctx, env, "用法：/linear bind 你的Linear邮箱"));
-        const name = (await feishu.getUserProfile(ctx.lark, env.senderOpenId)).name;
-        const bound = await bindByEmail(ctx, {
-          feishuOpenId: env.senderOpenId,
-          linearEmail: args,
-          feishuName: name,
-        });
-        return void (await say(ctx, env, `✅ 已绑定 Linear 用户：${bound.linearName}（${bound.linearEmail}）`));
+        if (!args) return void (await say(ctx, env, t("cmd.bind.usage")));
+        const bound = await bindVerified(ctx, env.senderOpenId, args);
+        return void (await say(ctx, env, t("cmd.bind.done", { name: bound.linearName, email: bound.linearEmail })));
       }
 
       case "create":
@@ -146,14 +131,14 @@ export async function runCommand(
 
       case "sync": {
         await requireLinearIdentity(ctx, env.senderOpenId);
-        if (!args) return void (await say(ctx, env, "用法：/linear sync ENG-123"));
+        if (!args) return void (await say(ctx, env, t("cmd.sync.usage")));
         const root = sourceMessageId(env) ?? env.messageId;
         const row = await createSyncThreadForIssue(ctx, {
           issueKey: args,
           chatId: env.chatId,
           rootMessageId: root,
         });
-        return void log.info({ issue: row?.linearIssueIdentifier }, "命令建立同步线程");
+        return void log.info({ issue: row?.linearIssueIdentifier }, "Synced thread set up via command");
       }
 
       case "me":
@@ -165,11 +150,11 @@ export async function runCommand(
       case "settings":
       case "设置": {
         if (env.chatType === "p2p") {
-          return void (await say(ctx, env, "请在需要配置的群里发送 /linear settings。"));
+          return void (await say(ctx, env, t("cmd.settings.groupOnly")));
         }
         const perms = await permissions(ctx, env.chatId, env.senderOpenId);
         if (!perms.canConfigure) {
-          return void (await say(ctx, env, "仅群主 / 群管理员 / Linear 管理员可以打开设置。"));
+          return void (await say(ctx, env, t("cmd.settings.forbidden")));
         }
         const card = await buildSettingsForChat(ctx, env.chatId, env.senderOpenId);
         return void (await deliverPrivately(ctx, {
@@ -180,17 +165,34 @@ export async function runCommand(
         }));
       }
 
+      case "lang":
+      case "language":
+      case "语言": {
+        const arg = args.trim().toLowerCase();
+        if (arg === "auto" || arg === "default") {
+          await setUserLocale(ctx, env.senderOpenId, null);
+          return void (await say(ctx, env, t("cmd.lang.auto")));
+        }
+        const l = normalizeLocale(arg);
+        if (!l) {
+          return void (await say(ctx, env, t("cmd.lang.usage", { current: currentLocale() })));
+        }
+        await setUserLocale(ctx, env.senderOpenId, l);
+        // 用新语言回复确认
+        return void (await withLocale(l, () => say(ctx, env, t("cmd.lang.done", { lang: t(`locale.${l}`) }))));
+      }
+
       case "project-channel": {
         await requireConfigurer(ctx, env.chatId, env.senderOpenId);
-        if (!args) return void (await say(ctx, env, "用法：/linear project-channel 项目名"));
+        if (!args) return void (await say(ctx, env, t("cmd.projectChannel.usage")));
         const linear = await ctx.getLinear();
         const projects = await linearApi.getProjects(linear, 100);
         const p =
           projects.find((x) => x.name.toLowerCase() === args.toLowerCase()) ??
           projects.find((x) => x.name.toLowerCase().includes(args.toLowerCase()));
-        if (!p) return void (await say(ctx, env, `未找到项目「${args}」`));
+        if (!p) return void (await say(ctx, env, t("cmd.projectChannel.notFound", { name: args })));
         const row = await createProjectChannel(ctx, { projectId: p.id, autoCreated: false });
-        return void (await say(ctx, env, `✅ 项目「${p.name}」的专属群已就绪（chat_id: ${row?.feishuChatId}）`));
+        return void (await say(ctx, env, t("cmd.projectChannel.done", { name: p.name, chatId: row?.feishuChatId })));
       }
 
       case "ask":
@@ -204,14 +206,14 @@ export async function runCommand(
         }));
 
       default:
-        return void (await say(ctx, env, `不认识的命令「${cmd}」。\n\n${HELP_TEXT}`));
+        return void (await say(ctx, env, t("cmd.unknown", { cmd, help: helpText() })));
     }
   } catch (err) {
     const msg =
       err instanceof NotBoundError || (err instanceof Error && err.name === "ForbiddenError")
         ? err.message
-        : `❌ ${err instanceof Error ? err.message : String(err)}`;
-    if (!(err instanceof NotBoundError)) log.error({ err, cmd }, "命令执行失败");
+        : t("cmd.error", { message: err instanceof Error ? err.message : String(err) });
+    if (!(err instanceof NotBoundError)) log.error({ err, cmd }, "Command failed");
     await say(ctx, env, msg).catch(() => {});
   }
 }

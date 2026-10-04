@@ -4,6 +4,9 @@ import { schema } from "../../db/index.js";
 import * as feishu from "../../adapters/feishu/client.js";
 import * as linearApi from "../../adapters/linear/api.js";
 import { buildSettingsCard } from "../../cards/settings.js";
+import { t } from "../../i18n/index.js";
+import { SETTING_WORKSPACE_LOCALE } from "../../i18n/resolve.js";
+import { getDefaultLocale, normalizeLocale } from "../../i18n/index.js";
 import { isLinearAdmin } from "../users/mapping.js";
 import {
   SETTING_AUTO_PROJECT_CHANNELS,
@@ -32,7 +35,7 @@ export async function permissions(ctx: AppContext, chatId: string, openId: strin
 
 export class ForbiddenError extends Error {
   constructor() {
-    super("仅群主 / 群管理员 / Linear 管理员可以修改此设置");
+    super(t("error.forbidden"));
     this.name = "ForbiddenError";
   }
 }
@@ -72,10 +75,10 @@ export async function buildSettingsForChat(ctx: AppContext, chatId: string, open
 
   const trig = (c: typeof schema.notificationConfigs.$inferSelect) =>
     [
-      c.onCreated && "新建",
-      c.onUpdated && "更新",
-      c.onCompleted && "完成",
-      c.onComment && "评论",
+      c.onCreated && t("settings.subs.label.created"),
+      c.onUpdated && t("settings.subs.label.updated"),
+      c.onCompleted && t("settings.subs.label.completed"),
+      c.onComment && t("settings.subs.label.comment"),
     ]
       .filter(Boolean)
       .join("/");
@@ -105,12 +108,21 @@ export async function buildSettingsForChat(ctx: AppContext, chatId: string, open
         id: v.id,
         type: "view",
         name: v.linearViewName ?? v.linearViewId,
-        triggers: v.trigger === "both" ? "新进入/完成" : v.trigger === "added" ? "新进入" : "完成",
+        triggers:
+          v.trigger === "both"
+            ? t("settings.subs.label.viewBoth")
+            : v.trigger === "added"
+              ? t("settings.subs.label.viewAdded")
+              : t("settings.subs.label.viewDone"),
       })),
     ],
     asks: asks
       ? { teamId: asks.teamId, teamName: teams.find((t) => t.id === asks.teamId)?.name ?? asks.teamId }
       : undefined,
+    locale: {
+      chat: normalizeLocale(settings?.locale),
+      workspace: normalizeLocale(await getSetting<string>(ctx, SETTING_WORKSPACE_LOCALE)) ?? getDefaultLocale(),
+    },
     workspace: perms.linearAdmin
       ? {
           guidance: await getSetting<string>(ctx, SETTING_WORKSPACE_GUIDANCE),
@@ -207,11 +219,11 @@ export async function addSub(
 ) {
   await requireConfigurer(ctx, chatId, openId);
   const ent = await resolveEntity(ctx, v.type, v.name);
-  if (!ent) throw new Error(`没有找到名为「${v.name}」的${v.type}`);
-  const t = new Set(v.triggers);
+  if (!ent) throw new Error(t("sub.notFound", { name: v.name, type: v.type }));
+  const trig = new Set(v.triggers);
   if (v.type === "view") {
-    const added = t.has("created") || !t.size;
-    const done = t.has("completed");
+    const added = trig.has("created") || !trig.size;
+    const done = trig.has("completed");
     await addSubscription(ctx, {
       chatId,
       type: "view",
@@ -221,17 +233,17 @@ export async function addSub(
       viewTrigger: added && done ? "both" : done ? "completed" : "added",
     });
   } else {
-    const all = !t.size;
+    const all = !trig.size;
     await addSubscription(ctx, {
       chatId,
       type: v.type,
       entityId: ent.id,
       entityName: ent.name,
       createdBy: openId,
-      onCreated: all || t.has("created"),
-      onUpdated: all || t.has("updated"),
-      onCompleted: all || t.has("completed"),
-      onComment: all || t.has("comment"),
+      onCreated: all || trig.has("created"),
+      onUpdated: all || trig.has("updated"),
+      onCompleted: all || trig.has("completed"),
+      onComment: all || trig.has("comment"),
     });
   }
   return ent;

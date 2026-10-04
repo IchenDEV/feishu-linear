@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { LOCALES, translate, withLocale } from "../i18n/index.js";
 import {
   buildCommentForm,
   buildCreateIssueForm,
@@ -26,7 +27,7 @@ const issue = {
   description: "描述",
 };
 
-const cards: Record<string, Record<string, unknown>> = {
+const makeCards = (): Record<string, Record<string, unknown>> => ({
   issue: buildIssueCard(issue, { chatId: "oc_1", messageId: "om_1" }),
   compact: buildIssueCompactCard(issue),
   notify: buildIssueNotifyCard({ title: "t", url: "https://x", action: "a", actor: "me" }),
@@ -56,6 +57,7 @@ const cards: Record<string, Record<string, unknown>> = {
     defaults: {},
     subscriptions: [{ kind: "config", id: 1, type: "team", name: "Eng", triggers: "新建" }],
     workspace: { autoProjectChannels: false, privateProjectChannels: false },
+    locale: { chat: "en", workspace: "zh-CN" },
   }),
   prefs: buildPersonalPrefsCard({
     enabled: true,
@@ -64,20 +66,32 @@ const cards: Record<string, Record<string, unknown>> = {
     onComment: true,
     onStatusChange: true,
   }),
-};
+});
 
 // 飞书卡片 JSON 2.0 不支持的 1.0 写法
 const FORBIDDEN = [`"tag":"action"`, `"tag":"note"`, `"multi_url"`, `"tag":"div"`, `"lark_md"`, `"wide_screen_mode"`];
 
-for (const [name, c] of Object.entries(cards)) {
-  test(`卡片 ${name}：符合 JSON 2.0（无 1.0 遗留写法，共享卡片，体积合理）`, () => {
-    const json = JSON.stringify(c);
-    assert.equal(c.schema, "2.0");
-    assert.equal((c.config as any).update_multi, true);
-    for (const bad of FORBIDDEN) assert.ok(!json.includes(bad), `${name} 含 ${bad}`);
-    assert.ok(json.length < 30 * 1024, "卡片需 < 30KB");
-  });
+for (const locale of LOCALES) {
+  const cards = withLocale(locale, makeCards);
+  for (const [name, c] of Object.entries(cards)) {
+    test(`[${locale}] 卡片 ${name}：符合 JSON 2.0（无 1.0 遗留写法，共享卡片，体积合理）`, () => {
+      const json = JSON.stringify(c);
+      assert.equal(c.schema, "2.0");
+      assert.equal((c.config as any).update_multi, true);
+      for (const bad of FORBIDDEN) assert.ok(!json.includes(bad), `${name} 含 ${bad}`);
+      assert.ok(json.length < 30 * 1024, "卡片需 < 30KB");
+    });
+  }
 }
+
+test("英文卡片不含中文界面文案", () => {
+  const cards = withLocale("en", makeCards);
+  for (const [name, c] of Object.entries(cards)) {
+    // 数据本身（标题「标题」、描述「描述」、触发器「新建」）是传入的测试数据，排除后不应再有中文
+    const json = JSON.stringify(c).replace(/标题|描述|新建|简体中文/g, "");
+    assert.ok(!/[\u4e00-\u9fff]/.test(json), `${name} 在 en 下仍含中文`);
+  }
+});
 
 test("Issue 卡片：回调携带会话上下文，已同步时不再出现同步按钮", () => {
   const withSync = JSON.stringify(buildIssueCard(issue, { chatId: "oc_1", messageId: "om_1" }));
@@ -104,6 +118,11 @@ test("创建表单：无源消息时不出现「同步线程」按钮", () => {
         allowSync,
       }),
     );
-  assert.ok(f(true).includes("创建并同步线程"));
-  assert.ok(!f(false).includes("创建并同步线程"));
+  for (const locale of LOCALES) {
+    withLocale(locale, () => {
+      const label = translate(locale, "card.create.submitSync");
+      assert.ok(f(true).includes(label));
+      assert.ok(!f(false).includes(label));
+    });
+  }
 });

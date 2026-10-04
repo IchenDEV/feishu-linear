@@ -1,4 +1,4 @@
-# 复制为 .dev.vars，供 `pnpm dev:worker`（wrangler dev）使用
+# Copy to .dev.vars for `pnpm dev:worker` (wrangler dev). Never commit .dev.vars.
 DATABASE_URL=
 FEISHU_APP_ID=
 FEISHU_APP_SECRET=
@@ -11,5 +11,5 @@ ADMIN_TOKEN=
 CRON_SECRET=
 OPENAI_API_KEY=
 
-# MCP 端点 Bearer Token（可选）
+# Optional: Bearer token for the /mcp endpoint
 MCP_TOKEN=

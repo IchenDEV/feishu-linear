@@ -10,12 +10,12 @@ import { closeDb, getDb } from "./index.js";
  */
 const url = process.env.DATABASE_URL;
 if (!url) {
-  console.error("缺少 DATABASE_URL");
+  console.error("DATABASE_URL is missing");
   process.exit(1);
 }
 
 const folder = path.resolve(process.env.MIGRATIONS_DIR ?? "drizzle");
 
 await migrate(getDb(url), { migrationsFolder: folder });
-console.log(`迁移完成 (${folder})`);
+console.log(`Migrations applied (${folder})`);
 await closeDb();

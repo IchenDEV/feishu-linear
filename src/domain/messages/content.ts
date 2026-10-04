@@ -2,6 +2,7 @@ import type { AppContext } from "../../app/context.js";
 import * as feishu from "../../adapters/feishu/client.js";
 import * as linearApi from "../../adapters/linear/api.js";
 import { createChildLogger } from "../../logger.js";
+import { t } from "../../i18n/index.js";
 
 const log = createChildLogger("message-content");
 
@@ -27,7 +28,7 @@ function applyMentionNames(text: string, names?: MentionNames): string {
   return text.replace(/@_user_\d+/g, (k) => (names[k] ? `@${names[k]}` : k));
 }
 
-/** 解析飞书消息 content（text / post / image / file / media / audio 等）为 Markdown + 附件 */
+/** 解析Feishu message content（text / post / image / file / media / audio 等）为 Markdown + 附件 */
 export function parseMessage(
   messageId: string,
   msgType: string,
@@ -135,13 +136,13 @@ export function parseMessage(
       return { text: "", attachments };
 
     case "interactive":
-      return { text: "[卡片消息]", attachments };
+      return { text: t("content.card"), attachments };
     case "merge_forward":
-      return { text: "[合并转发的消息]", attachments };
+      return { text: t("content.merged"), attachments };
     case "sticker":
-      return { text: "[表情]", attachments };
+      return { text: t("content.sticker"), attachments };
     default:
-      return { text: `[${msgType} 消息]`, attachments };
+      return { text: t("content.other", { type: msgType }), attachments };
   }
 }
 
@@ -170,7 +171,7 @@ function guessContentType(att: Attachment): string {
 }
 
 /**
- * 把飞书消息里的图片 / 文件上传到 Linear，返回 Markdown 片段。
+ * 把Feishu message里的图片 / 文件上传到 Linear，返回 Markdown 片段。
  * 单个失败不影响其余附件（返回提示行）。
  */
 export async function uploadAttachmentsToLinear(
@@ -188,7 +189,7 @@ export async function uploadAttachmentsToLinear(
         type: att.kind === "image" ? "image" : "file",
       });
       if (data.byteLength > MAX_BYTES) {
-        out.push(`> ⚠️ 附件 ${att.name} 超过 20MB，未同步`);
+        out.push(t("content.tooLarge", { name: att.name }));
         continue;
       }
       const url = await linearApi.uploadFile(linear, {
@@ -198,12 +199,12 @@ export async function uploadAttachmentsToLinear(
       });
       out.push(att.kind === "image" ? `![${att.name}](${url})` : `[${att.name}](${url})`);
     } catch (err) {
-      log.warn({ err, att: att.name }, "附件上传 Linear 失败");
-      out.push(`> ⚠️ 附件 ${att.name} 同步失败`);
+      log.warn({ err, att: att.name }, "Failed to upload the attachment to Linear");
+      out.push(t("content.uploadFailed", { name: att.name }));
     }
   }
   if (attachments.length > MAX_FILES) {
-    out.push(`> ⚠️ 仅同步前 ${MAX_FILES} 个附件`);
+    out.push(t("content.tooMany", { max: MAX_FILES }));
   }
   return out;
 }
@@ -252,7 +253,7 @@ export async function downloadLinearAsset(
     if (buf.byteLength > MAX_BYTES) return null;
     return { data: buf, contentType: res.headers.get("content-type") ?? "" };
   } catch (err) {
-    log.warn({ err, url }, "下载 Linear 资源失败");
+    log.warn({ err, url }, "Failed to download the Linear asset");
     return null;
   }
 }
