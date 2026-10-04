@@ -1,0 +1,1138 @@
+{
+  "id": "f337b31c-df83-4a0f-8280-a329e9628e5b",
+  "prevId": "9132d054-8850-413c-abd1-2f84d4bb27b4",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.agent_guidance": {
+      "name": "agent_guidance",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feishu_chat_id": {
+          "name": "feishu_chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guidance": {
+          "name": "guidance",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_team_id": {
+          "name": "default_team_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "default_project_id": {
+          "name": "default_project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "agent_guidance_feishu_chat_id_unique": {
+          "name": "agent_guidance_feishu_chat_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "feishu_chat_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.app_settings": {
+      "name": "app_settings",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chat_settings": {
+      "name": "chat_settings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feishu_chat_id": {
+          "name": "feishu_chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_team_id": {
+          "name": "default_team_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "default_project_id": {
+          "name": "default_project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "default_template_id": {
+          "name": "default_template_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "chat_settings_feishu_chat_id_unique": {
+          "name": "chat_settings_feishu_chat_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "feishu_chat_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.issue_duplicates": {
+      "name": "issue_duplicates",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "duplicate_issue_id": {
+          "name": "duplicate_issue_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_issue_id": {
+          "name": "original_issue_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_issue_duplicates": {
+          "name": "uq_issue_duplicates",
+          "columns": [
+            {
+              "expression": "duplicate_issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "original_issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_issue_duplicates_original": {
+          "name": "idx_issue_duplicates_original",
+          "columns": [
+            {
+              "expression": "original_issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.issue_expansions": {
+      "name": "issue_expansions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "chat_id": {
+          "name": "chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_identifier": {
+          "name": "issue_identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expanded_at": {
+          "name": "expanded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_issue_expansions": {
+          "name": "uq_issue_expansions",
+          "columns": [
+            {
+              "expression": "chat_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "issue_identifier",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.linear_tokens": {
+      "name": "linear_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "app_user_id": {
+          "name": "app_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "linear_tokens_organization_id_unique": {
+          "name": "linear_tokens_organization_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.notification_configs": {
+      "name": "notification_configs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_entity_id": {
+          "name": "linear_entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_entity_name": {
+          "name": "linear_entity_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feishu_chat_id": {
+          "name": "feishu_chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feishu_user_id": {
+          "name": "feishu_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "on_created": {
+          "name": "on_created",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "on_updated": {
+          "name": "on_updated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "on_completed": {
+          "name": "on_completed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "on_comment": {
+          "name": "on_comment",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_notification_entity": {
+          "name": "idx_notification_entity",
+          "columns": [
+            {
+              "expression": "linear_entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.oauth_states": {
+      "name": "oauth_states",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "oauth_states_state_unique": {
+          "name": "oauth_states_state_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "state"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.processed_events": {
+      "name": "processed_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_processed_events_at": {
+          "name": "idx_processed_events_at",
+          "columns": [
+            {
+              "expression": "processed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "processed_events_event_id_unique": {
+          "name": "processed_events_event_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.project_channels": {
+      "name": "project_channels",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "linear_project_id": {
+          "name": "linear_project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_project_name": {
+          "name": "linear_project_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feishu_chat_id": {
+          "name": "feishu_chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auto_created": {
+          "name": "auto_created",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "project_channels_linear_project_id_unique": {
+          "name": "project_channels_linear_project_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "linear_project_id"
+          ]
+        },
+        "project_channels_feishu_chat_id_unique": {
+          "name": "project_channels_feishu_chat_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "feishu_chat_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sync_comments": {
+      "name": "sync_comments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "sync_thread_id": {
+          "name": "sync_thread_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "feishu_msg_id": {
+          "name": "feishu_msg_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_comment_id": {
+          "name": "linear_comment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sync_comments_thread": {
+          "name": "idx_sync_comments_thread",
+          "columns": [
+            {
+              "expression": "sync_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sync_comments_sync_thread_id_sync_threads_id_fk": {
+          "name": "sync_comments_sync_thread_id_sync_threads_id_fk",
+          "tableFrom": "sync_comments",
+          "tableTo": "sync_threads",
+          "columnsFrom": [
+            "sync_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sync_comments_feishu_msg_id_unique": {
+          "name": "sync_comments_feishu_msg_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "feishu_msg_id"
+          ]
+        },
+        "sync_comments_linear_comment_id_unique": {
+          "name": "sync_comments_linear_comment_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "linear_comment_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.sync_threads": {
+      "name": "sync_threads",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feishu_chat_id": {
+          "name": "feishu_chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "feishu_thread_id": {
+          "name": "feishu_thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "feishu_root_msg_id": {
+          "name": "feishu_root_msg_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_issue_id": {
+          "name": "linear_issue_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_issue_identifier": {
+          "name": "linear_issue_identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linear_issue_url": {
+          "name": "linear_issue_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linear_attachment_id": {
+          "name": "linear_attachment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sync_enabled": {
+          "name": "sync_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sync_threads_linear": {
+          "name": "idx_sync_threads_linear",
+          "columns": [
+            {
+              "expression": "linear_issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sync_threads_feishu_thread_id_unique": {
+          "name": "sync_threads_feishu_thread_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "feishu_thread_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_mappings": {
+      "name": "user_mappings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feishu_open_id": {
+          "name": "feishu_open_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "feishu_union_id": {
+          "name": "feishu_union_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feishu_name": {
+          "name": "feishu_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feishu_email": {
+          "name": "feishu_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linear_user_id": {
+          "name": "linear_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_email": {
+          "name": "linear_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "linear_name": {
+          "name": "linear_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_mappings_feishu_open_id_unique": {
+          "name": "user_mappings_feishu_open_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "feishu_open_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_notification_prefs": {
+      "name": "user_notification_prefs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "feishu_open_id": {
+          "name": "feishu_open_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "on_assigned": {
+          "name": "on_assigned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "on_mentioned": {
+          "name": "on_mentioned",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "on_comment": {
+          "name": "on_comment",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "on_status_change": {
+          "name": "on_status_change",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_notification_prefs_feishu_open_id_unique": {
+          "name": "user_notification_prefs_feishu_open_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "feishu_open_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.view_subscriptions": {
+      "name": "view_subscriptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "linear_view_id": {
+          "name": "linear_view_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "linear_view_name": {
+          "name": "linear_view_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "feishu_chat_id": {
+          "name": "feishu_chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'added'"
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot_at": {
+          "name": "snapshot_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_view_sub": {
+          "name": "uq_view_sub",
+          "columns": [
+            {
+              "expression": "linear_view_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "feishu_chat_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

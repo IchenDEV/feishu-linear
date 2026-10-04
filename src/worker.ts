@@ -36,15 +36,20 @@ export default {
   fetch: (request: Request, workerEnv: unknown, ctx: unknown) =>
     handler.fetch(request, workerEnv, ctx),
 
+  /**
+   * Cron 触发：通过应用自己的 /cron/* 路由执行，这样 AppContext（飞书/Linear 客户端）只在一处组装。
+   * - 每日一次：清理过期事件
+   * - 每 10 分钟：轮询视图订阅
+   */
   async scheduled(
-    _event: unknown,
-    _env: unknown,
+    event: { cron?: string },
+    workerEnv: unknown,
     ctx: { waitUntil(p: Promise<unknown>): void },
   ) {
-    const url = process.env.DATABASE_URL!;
-    const { getDb } = await import("./db/index.js");
-    const { withRequestDb } = await import("./db/scope.js");
-    const { cleanupOldEvents } = await import("./utils/dedup.js");
-    ctx.waitUntil(withRequestDb(url, () => cleanupOldEvents(getDb(url))));
+    const path = event.cron === "*/10 * * * *" ? "/cron/views" : "/cron/cleanup";
+    const request = new Request(`https://cron.internal${path}`, {
+      headers: { authorization: `Bearer ${process.env.CRON_SECRET ?? ""}` },
+    });
+    ctx.waitUntil(handler.fetch(request, workerEnv, ctx));
   },
 };

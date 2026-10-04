@@ -5,6 +5,7 @@ import {
   text,
   boolean,
   timestamp,
+  jsonb,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -160,3 +161,70 @@ export const oauthStates = pgTable("oauth_states", {
   state: text("state").notNull().unique(),
   createdAt: createdAt(),
 });
+
+// ── 全局设置（key/value）：工作区级 Agent Guidance、项目频道自动创建开关等 ──
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<unknown>().notNull(),
+  updatedAt: updatedAt(),
+});
+
+// ── 群级设置：默认团队 / 项目 / 模板（Agent Guidance 的结构化部分在 agent_guidance）──
+export const chatSettings = pgTable("chat_settings", {
+  id: serial("id").primaryKey(),
+  feishuChatId: text("feishu_chat_id").notNull().unique(),
+  defaultTeamId: text("default_team_id"),
+  defaultProjectId: text("default_project_id"),
+  defaultTemplateId: text("default_template_id"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+// ── 个人通知偏好（私聊推送哪些事件）──
+export const userNotificationPrefs = pgTable("user_notification_prefs", {
+  id: serial("id").primaryKey(),
+  feishuOpenId: text("feishu_open_id").notNull().unique(),
+  enabled: boolean("enabled").notNull().default(true),
+  onAssigned: boolean("on_assigned").notNull().default(true),
+  onMentioned: boolean("on_mentioned").notNull().default(true),
+  onComment: boolean("on_comment").notNull().default(true),
+  onStatusChange: boolean("on_status_change").notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+// ── 视图订阅：自定义 View 的 Issue 集合变化时推送到群 ──
+export const viewSubscriptions = pgTable(
+  "view_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    linearViewId: text("linear_view_id").notNull(),
+    linearViewName: text("linear_view_name"),
+    feishuChatId: text("feishu_chat_id").notNull(),
+    /** added = 新进入视图；completed = 完成；both */
+    trigger: text("trigger", { enum: ["added", "completed", "both"] })
+      .notNull()
+      .default("added"),
+    /** 上一次轮询的快照：issueId → 是否已完成 */
+    snapshot: jsonb("snapshot").$type<Record<string, boolean>>(),
+    snapshotAt: ts("snapshot_at"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("uq_view_sub").on(t.linearViewId, t.feishuChatId)],
+);
+
+// ── 重复关系：duplicate 被标记为重复，original 为原始 Issue ──
+export const issueDuplicates = pgTable(
+  "issue_duplicates",
+  {
+    id: serial("id").primaryKey(),
+    duplicateIssueId: text("duplicate_issue_id").notNull(),
+    originalIssueId: text("original_issue_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("uq_issue_duplicates").on(t.duplicateIssueId, t.originalIssueId),
+    index("idx_issue_duplicates_original").on(t.originalIssueId),
+  ],
+);

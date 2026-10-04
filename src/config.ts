@@ -25,6 +25,17 @@ const envSchema = z.object({
     .string()
     .default("read,write,issues:create,comments:create,app:assignable,app:mentionable"),
 
+  // ── 链接展开 ──
+  /** 飞书后台已配置「链接预览」时保持 true（链接由飞书原生展开）；否则设为 false，由机器人回复卡片展开 */
+  FEISHU_LINK_PREVIEW: z
+    .string()
+    .default("true")
+    .transform((v) => v.toLowerCase() !== "false"),
+
+  // ── MCP ──
+  /** 对外 MCP 端点（/mcp）的 Bearer Token；留空则 MCP 端点禁用 */
+  MCP_TOKEN: z.string().default(""),
+
   // ── AI（@机器人自然语言）──
   OPENAI_API_KEY: z.string().default(""),
   OPENAI_BASE_URL: z.string().default("https://api.openai.com/v1"),

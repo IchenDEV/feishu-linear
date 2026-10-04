@@ -14,6 +14,7 @@ import {
   errorMiddleware,
 } from "./transport/http/middleware.js";
 import { cleanupOldEvents } from "./utils/dedup.js";
+import { pollViewSubscriptions } from "./domain/notify/views.js";
 import type { AppContext } from "./app/context.js";
 import { logger } from "./logger.js";
 
@@ -28,6 +29,7 @@ const ctx: AppContext = {
   lark: createFeishuClient(config),
   getLinear: () => linearFactory.getClient(),
   getLinearAppUserId: () => linearFactory.getAppUserId(),
+  getLinearAuthHeader: () => linearFactory.getAuthHeader(),
 };
 
 const app = new Koa();
@@ -63,6 +65,13 @@ if (!process.env.VERCEL && !isPerRequestDb()) {
         logger.error({ err }, "清理过期事件失败"),
       ),
     6 * 60 * 60 * 1000,
+  ).unref();
+  setInterval(
+    () =>
+      pollViewSubscriptions(ctx).catch((err) =>
+        logger.error({ err }, "视图订阅轮询失败"),
+      ),
+    10 * 60 * 1000,
   ).unref();
 }
 

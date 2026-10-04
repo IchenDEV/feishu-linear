@@ -46,41 +46,38 @@ export function removeMentions(text: string): string {
   return text.replace(/@_user_\d+/g, "").replace(/\s+/g, " ").trim();
 }
 
+export type LinearUrlKind = "issue" | "project" | "document" | "initiative" | "unknown";
+
 export function parseLinearUrl(url: string): {
-  type: "issue" | "project" | "document" | "unknown";
+  type: LinearUrlKind;
   teamKey?: string;
   identifier?: string;
+  /** URL 中的 slug（如 `my-project-a1b2c3d4e5f6`） */
   id?: string;
 } | null {
   try {
     const parsed = new URL(url);
-    if (!parsed.hostname.includes("linear.app")) return null;
+    if (parsed.hostname !== "linear.app" && !parsed.hostname.endsWith(".linear.app")) return null;
 
     const parts = parsed.pathname.split("/").filter(Boolean);
-    const issueMatch = parts.find((p) => /^[A-Z]+-\d+$/.test(p));
-    if (issueMatch) {
+    const issueMatch = parts.find((p) => /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(p));
+    if (issueMatch && parts[parts.indexOf(issueMatch) - 1] === "issue") {
       const [teamKey] = issueMatch.split("-");
-      return { type: "issue", teamKey, identifier: issueMatch };
+      return { type: "issue", teamKey, identifier: issueMatch.toUpperCase() };
     }
-
-    if (parts.includes("project")) {
-      return {
-        type: "project",
-        id: parts[parts.indexOf("project") + 1],
-      };
+    for (const kind of ["project", "document", "initiative"] as const) {
+      const at = parts.indexOf(kind);
+      if (at >= 0 && parts[at + 1]) return { type: kind, id: parts[at + 1] };
     }
-
-    if (parts.includes("document")) {
-      return {
-        type: "document",
-        id: parts[parts.indexOf("document") + 1],
-      };
-    }
-
     return { type: "unknown" };
   } catch {
     return null;
   }
+}
+
+/** slug 末尾的 12 位 slugId（Linear 的项目 / 文档 / Initiative URL 形如 name-<slugId>） */
+export function slugTail(slug: string): string {
+  return slug.split("-").pop() ?? slug;
 }
 
 export function detectIssueIdentifiers(text: string): string[] {

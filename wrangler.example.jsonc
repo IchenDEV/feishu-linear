@@ -25,7 +25,8 @@
   // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<id>" }],
 
   // 每天 03:00 UTC 清理去重记录 → scheduled()
-  "triggers": { "crons": ["0 3 * * *"] },
+  // 每日清理 + 每 10 分钟轮询视图订阅
+  "triggers": { "crons": ["0 3 * * *", "*/10 * * * *"] },
 
   // 非敏感配置；密钥一律用 `wrangler secret put <NAME>`（或 `wrangler deploy --secrets-file`）
   "vars": {

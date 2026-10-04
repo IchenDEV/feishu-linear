@@ -17,6 +17,7 @@ import * as linearApi from "../../adapters/linear/api.js";
 import { bindByEmail } from "../../domain/users/mapping.js";
 import { requireBearer } from "./middleware.js";
 import { cleanupOldEvents } from "../../utils/dedup.js";
+import { pollViewSubscriptions } from "../../domain/notify/views.js";
 import { createChildLogger } from "../../logger.js";
 
 const log = createChildLogger("http");
@@ -39,7 +40,10 @@ export function createRouter(
   // ── 飞书：事件 / 卡片回调 / 链接预览 共用同一个请求地址 ──
   router.post(
     "/webhook/feishu",
-    createFeishuWebhookMiddleware(feishuDispatcher),
+    createFeishuWebhookMiddleware(
+      feishuDispatcher,
+      ctx.config.FEISHU_VERIFICATION_TOKEN,
+    ),
   );
 
   // ── Linear Webhook ──
@@ -123,6 +127,15 @@ export function createRouter(
     async (koaCtx) => {
       await cleanupOldEvents(ctx.db);
       koaCtx.body = { ok: true };
+    },
+  );
+
+  // ── 视图订阅轮询（Vercel Cron / Workers cron 调用；VPS 上由进程内定时器负责）──
+  router.get(
+    "/cron/views",
+    requireBearer(() => ctx.config.CRON_SECRET, "Cron"),
+    async (koaCtx) => {
+      koaCtx.body = { ok: true, ...(await pollViewSubscriptions(ctx)) };
     },
   );
 

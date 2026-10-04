@@ -47,7 +47,14 @@ export function createLinearClientFactory(config: Env, db: Db) {
     return cachedAppUserId;
   }
 
-  return { getClient, getAppUserId };
+  /** 下载 Linear 私有资源（uploads.linear.app）时使用的 Authorization 头 */
+  async function getAuthHeader(): Promise<string> {
+    if (config.LINEAR_AUTH_MODE === "api_key") return config.LINEAR_API_KEY;
+    const token = await ensureOAuthToken(config, db);
+    return `Bearer ${token.accessToken}`;
+  }
+
+  return { getClient, getAppUserId, getAuthHeader };
 }
 
 type TokenRow = typeof schema.linearTokens.$inferSelect;

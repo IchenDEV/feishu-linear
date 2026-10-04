@@ -11,4 +11,6 @@ export interface AppContext {
   getLinear: () => Promise<LinearClient>;
   /** Linear App User ID（用于过滤自身 webhook） */
   getLinearAppUserId: () => Promise<string | undefined>;
+  /** 下载 Linear 私有资源用的 Authorization 头 */
+  getLinearAuthHeader: () => Promise<string>;
 }
