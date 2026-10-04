@@ -197,3 +197,7 @@ curl https://$DOMAIN/health
 ```
 
 使用外部 Postgres 时去掉 `postgres` 服务并修改 `app.environment.DATABASE_URL`。Caddy 仅放行 `/health`、`/webhook/*`、`/oauth/linear/*`、`/api/*`。
+
+## 许可
+
+[AGPL-3.0](LICENSE)。如果你修改了本项目并通过网络向他人提供服务，需要向这些用户提供修改后的完整源码。
