@@ -17,6 +17,9 @@ import * as linearApi from "../../adapters/linear/api.js";
 import { bindByEmail } from "../../domain/users/mapping.js";
 import { requireBearer } from "./middleware.js";
 import { cleanupOldEvents } from "../../utils/dedup.js";
+import { createSyncThreadForIssue } from "../../domain/sync/threads.js";
+import { createProjectChannel } from "../../domain/notify/engine.js";
+import { handleRpc } from "../../domain/mcp/server.js";
 import { pollViewSubscriptions } from "../../domain/notify/views.js";
 import { createChildLogger } from "../../logger.js";
 
@@ -130,6 +133,27 @@ export function createRouter(
     },
   );
 
+  // ── MCP（Streamable HTTP，无状态）：Bearer MCP_TOKEN ──
+  router.post(
+    "/mcp",
+    requireBearer(() => ctx.config.MCP_TOKEN, "MCP"),
+    async (koaCtx) => {
+      const body = koaCtx.request.body as unknown;
+      const batch = Array.isArray(body) ? body : [body];
+      const out = (
+        await Promise.all(batch.map((m) => handleRpc(ctx, m as Parameters<typeof handleRpc>[1])))
+      ).filter((x) => x !== null);
+      if (!out.length) {
+        koaCtx.status = 202;
+        return;
+      }
+      koaCtx.body = Array.isArray(body) ? out : out[0];
+    },
+  );
+  router.get("/mcp", (koaCtx) => {
+    koaCtx.status = 405; // 不提供服务端推送流
+  });
+
   // ── 视图订阅轮询（Vercel Cron / Workers cron 调用；VPS 上由进程内定时器负责）──
   router.get(
     "/cron/views",
@@ -213,6 +237,44 @@ export function createRouter(
         },
       });
     koaCtx.body = { success: true };
+  });
+
+  /** 为已有 Issue 与飞书话题建立同步（rootMessageId = 话题根消息） */
+  router.post("/api/sync-thread", async (koaCtx) => {
+    const b = koaCtx.request.body as Record<string, string>;
+    if (!b.issueKey || !b.chatId || !b.rootMessageId) {
+      koaCtx.status = 400;
+      koaCtx.body = { error: "需要 issueKey、chatId、rootMessageId" };
+      return;
+    }
+    try {
+      const row = await createSyncThreadForIssue(ctx, {
+        issueKey: b.issueKey,
+        chatId: b.chatId,
+        rootMessageId: b.rootMessageId,
+      });
+      koaCtx.body = { success: true, threadId: row?.feishuThreadId };
+    } catch (err) {
+      koaCtx.status = 500;
+      koaCtx.body = { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  /** 为 Linear 项目创建专属飞书群 */
+  router.post("/api/project-channel", async (koaCtx) => {
+    const b = koaCtx.request.body as Record<string, string>;
+    if (!b.projectId) {
+      koaCtx.status = 400;
+      koaCtx.body = { error: "需要 projectId" };
+      return;
+    }
+    try {
+      const row = await createProjectChannel(ctx, { projectId: b.projectId, autoCreated: false });
+      koaCtx.body = { success: true, chatId: row?.feishuChatId };
+    } catch (err) {
+      koaCtx.status = 500;
+      koaCtx.body = { error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   router.get("/api/teams", async (koaCtx) => {

@@ -8,6 +8,7 @@ import { createFeishuClient } from "./adapters/feishu/client.js";
 import { createFeishuEventDispatcher } from "./adapters/feishu/dispatcher.js";
 import { createLinearClientFactory } from "./adapters/linear/client.js";
 import { createRouter } from "./transport/http/routes.js";
+import { createH5Router } from "./transport/h5/routes.js";
 import {
   accessLogMiddleware,
   bodyMiddleware,
@@ -41,6 +42,9 @@ app.use(bodyMiddleware);
 const router = createRouter(ctx, createFeishuEventDispatcher(ctx));
 app.use(router.routes());
 app.use(router.allowedMethods());
+const h5 = createH5Router(ctx);
+app.use(h5.routes());
+app.use(h5.allowedMethods());
 
 app.listen(config.PORT, config.HOST, () => {
   logger.info(
